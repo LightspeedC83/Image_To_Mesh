@@ -1,1 +1,1 @@
-The end goal of this project is to take in an image and create a mesh from it that can be used for 3D modeling or 3D printing
+The end goal of this project is to take in an image and create a mesh from it that can be used for 3D modeling or 3D printing.
