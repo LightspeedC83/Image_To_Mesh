@@ -7,6 +7,7 @@ The program starts by taking in an image, it converts the image to black and whi
 - groupID_array - 2D array pixel_array[y][x] yeilds yeilds the group ID of a pixel at (x,y), None if there is not black pixel there
 - boundary_pixels - 2D array boundary_pixels[y][x] yeilds True if there (x,y) has a boundary pixel, False if not
 - points_by_group - a python list that holds groups, each group is a list of coordinate values
+- bounary_points_by_group - a python list that holds lists of boundary pixels for each group
 
 All of this processing is done with numpy arrays, which make the program much faster than if we used python's lists
 

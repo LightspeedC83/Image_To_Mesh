@@ -3,7 +3,7 @@ from PIL import Image
 from collections import deque
 
 #opening the reference image
-reference_name = "test"
+reference_name = "test_medium"
 reference_path = f"images\{reference_name}.jpg"
 
 reference_image = Image.open(reference_path)
@@ -74,7 +74,7 @@ for y in range(reference_size[1]):
                     group.append(upNext)
                     visited_spots[upNext[1],upNext[0]] = True #marking this pixel as visited
                     for next_point in [[upNext[0]-1, upNext[1]], [upNext[0]+1, upNext[1]], [upNext[0], upNext[1]-1], [upNext[0], upNext[1]+1]]:
-                        if next_point[0]>=0 and next_point[1]>=0 and upNext[0]<=x_size and upNext[1]<=y_size: #if location is valid 
+                        if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid 
                             if visited_spots[next_point[1]][next_point[0]] == 0 and pixel_array[next_point[1]][next_point[0]]: #if the pixel at the potential neighbor position isn't already visited and has a black pixel, we add to queue to check
                                 queue.append((next_point[0],next_point[1])) 
                 group_index +=1
@@ -84,19 +84,32 @@ for y in range(reference_size[1]):
 
 # going through and marking the boundary pixels for each pixel group
 boundary_pixles = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool)
-for y in range(reference_size[1]-1):
-    for x in range(reference_size[0]-1):
+for y in range(reference_size[1]):
+    for x in range(reference_size[0]):
         
         for next_point in [[x-1, y], [x+1, y], [x, y-1], [x, y+1]]: 
-            if next_point[0]>=0 and next_point[1]>=0 and upNext[0]<=x_size and upNext[1]<=y_size: #if location is valid                          
+            if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid                          
                 if not pixel_array[next_point[1]][next_point[0]] and groupID_array[y][x]!=None: #if the pixel at the potential neighbor position is white (remember True means black), we mark curr as a border pixel (curr also has to be part of a group)
                     boundary_pixles[y][x] = True
+            elif groupID_array[y][x]!=None: #if a pixel that is part of a group is on a the border of the image, it's marked as a border pixel as well
+                boundary_pixles[y][x] = True
+
+boundary_points_by_group = []
+for g in points_by_group:
+    boundary = []
+    for p in g:
+        if boundary_pixles[p[1]][p[0]]:
+            boundary.append(p)
+    boundary_points_by_group.append(boundary)
+
+
 
 # Now we have the following datastrucutres to keep track information about a pixel at a location (x,y)
 #   pixel_array - 2D array pixel_array[y][x] yeilds True if there is a black pixel at (x,y), False if not
 #   groupID_array - 2D array pixel_array[y][x] yeilds yeilds the group ID of a pixel at (x,y), None if there is not black pixel there
 #   boundary_pixels - 2D array boundary_pixels[y][x] yeilds True if there (x,y) has a boundary pixel, False if not
 #   points_by_group - a python list that holds groups, each group is a list of coordinate values
+#   bounary_points_by_group - a python list that holds lists of boundary pixels for each group
 
 
 # saving an image of all the border pixels marked in red
@@ -135,4 +148,4 @@ reference_image.putdata(output_pixels)
 reference_image.save(f"images\{reference_name}_groups_marked.png")
 
 
- 
+# now what we want to do is reduce the number of pixels
