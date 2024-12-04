@@ -98,6 +98,7 @@ for y in range(reference_size[1]-1):
 #   boundary_pixels - 2D array boundary_pixels[y][x] yeilds True if there (x,y) has a boundary pixel, False if not
 
 
+# saving an image of all the border pixels marked in red
 output_pixels = []
 for y in range(reference_size[1]):
     for x in range(reference_size[0]):
@@ -107,7 +108,28 @@ for y in range(reference_size[1]):
         else:
             output_pixels.append((255,255,255))
         
-
 reference_image = Image.new(mode="RGB", size=reference_size)
 reference_image.putdata(output_pixels)
 reference_image.save(f"images\{reference_name}_borders_marked.png")
+
+# saving an image with all the pixels of the same group assigned the same random color
+color_groups ={}
+color_groups[None] = (255,255,255) #white if it's a white pixel
+
+output_pixels = []
+for y in range(reference_size[1]):
+    for x in range(reference_size[0]):
+        color = None
+        try:
+            color = color_groups[groupID_array[y][x]]
+        except KeyError:
+            color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
+            color_groups[groupID_array[y][x]] = color
+        if boundary_pixles[y][x]: #if it's a boundary pixel, we make it black
+            color = (0,0,0)
+        output_pixels.append(color)
+
+reference_image = Image.new(mode="RGB", size=reference_size)
+reference_image.putdata(output_pixels)
+reference_image.save(f"images\{reference_name}_groups_marked.png")
+
