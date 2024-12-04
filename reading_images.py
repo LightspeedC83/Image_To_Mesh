@@ -34,6 +34,7 @@ class Pixel(): #defining a pixel class
         self.x = coordinates[0]
         self.y = coordinates[1]
         self.groupID = None
+        self.isBorder = False
     
     def set_groupID(self, groupID):
         self.groupID = groupID
@@ -79,6 +80,7 @@ def print_by_value():
 
 # now we do a flood fill to assign groupIDs to all pixel objects (white pixels have groupID None)
 visited_spots = [[0 for x in range(reference_size[0])]for y in range(reference_size[1])] # a key of visited spots, 0 means we haven't visited, 1 means we have. use this for any given pixel to see if we've visited
+points_by_group = []
 
 group_index = 0
 for y in range(reference_size[1]-1):
@@ -92,20 +94,29 @@ for y in range(reference_size[1]-1):
             else:
                 queue = [] #create a queue
                 queue.append(curr) 
+                group = []
                 while len(queue)!=0: #while queue isn't empty we keep looking at neighbors of the queue and assigning them IDs of said group
                     upNext = queue.pop(0)
                     upNext.groupID = group_index #assigning the group index for this group
+                    group.append(upNext)
                     visited_spots[upNext.y][upNext.x] = 1 #marking this pixel as visited
-                    for next_point in [[upNext.x-1, upNext.y], [upNext.x+1, upNext.y], [upNext.x, upNext.y-1], [upNext.x, upNext.y+1]]: 
-                        # print(next_point, visited_spots[next_point[1]][next_point[0]])
+                    for next_point in [[upNext.x-1, upNext.y], [upNext.x+1, upNext.y], [upNext.x, upNext.y-1], [upNext.x, upNext.y+1]]:
                         try:                          
-                            if visited_spots[next_point[1]][next_point[0]] == 0 and pixel_objects[next_point[1]][next_point[0]].color != (255,255,255): #if the pixel at the potential neighbor position isn't already visited, we add to queue to check
+                            if visited_spots[next_point[1]][next_point[0]] == 0 and pixel_objects[next_point[1]][next_point[0]].color != (255,255,255): #if the pixel at the potential neighbor position isn't already visited and isn't white, we add to queue to check
                                 queue.append(pixel_objects[next_point[1]][next_point[0]])  
                         except: #if there is no pixel at this potential position
                             pass
                 group_index +=1
+                points_by_group.append(group)
 
+# going through and marking the boundary pixels for each pixel group
+for x in pixel_objects:
+    for curr in x:
+        for next_point in [[curr.x-1, curr.y], [curr.x+1, curr.y], [curr.x, curr.y-1], [curr.x, curr.y+1]]: 
+            
+            try:                          
+                if pixel_objects[next_point[1]][next_point[0]].color == (255,255,255): #if the pixel at the potential neighbor position is white, we mark curr as a border pixel
+                    curr.isBorder = True
+            except:
+                pass
 
-print_by_group()    
-print()
-print_by_value()
