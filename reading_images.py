@@ -1,8 +1,8 @@
 from PIL import Image
 
 #opening the reference image
-reference_name = "test_small.jpg"
-reference_path = f"{reference_name}"
+reference_name = "test"
+reference_path = f"{reference_name}.jpg"
 
 reference_image = Image.open(reference_path)
 reference_pixels = list(reference_image.getdata())
@@ -82,6 +82,7 @@ def print_by_value():
 visited_spots = [[0 for x in range(reference_size[0])]for y in range(reference_size[1])] # a key of visited spots, 0 means we haven't visited, 1 means we have. use this for any given pixel to see if we've visited
 points_by_group = []
 
+
 group_index = 0
 for y in range(reference_size[1]-1):
     for x in range(reference_size[0]-1):
@@ -109,14 +110,27 @@ for y in range(reference_size[1]-1):
                 group_index +=1
                 points_by_group.append(group)
 
+
 # going through and marking the boundary pixels for each pixel group
 for x in pixel_objects:
     for curr in x:
         for next_point in [[curr.x-1, curr.y], [curr.x+1, curr.y], [curr.x, curr.y-1], [curr.x, curr.y+1]]: 
             
             try:                          
-                if pixel_objects[next_point[1]][next_point[0]].color == (255,255,255): #if the pixel at the potential neighbor position is white, we mark curr as a border pixel
+                if pixel_objects[next_point[1]][next_point[0]].color == (255,255,255) and curr.groupID != None: #if the pixel at the potential neighbor position is white, we mark curr as a border pixel (curr also has to be part of a group)
                     curr.isBorder = True
             except:
                 pass
 
+
+output_pixels = []
+for x in pixel_objects:
+    for p in x:
+        if p.isBorder:
+            output_pixels.append((255,0,0))
+        else:
+            output_pixels.append((255,255,255))
+
+reference_image = Image.new(mode="RGB", size=reference_size)
+reference_image.putdata(output_pixels)
+reference_image.save(f"{reference_name}_borders_marked.jpg")
