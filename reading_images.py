@@ -3,8 +3,8 @@ from PIL import Image
 from collections import deque
 
 #opening the reference image
-reference_name = "penguin"
-reference_path = f"images\{reference_name}.png"
+reference_name = "test"
+reference_path = f"images\{reference_name}.jpg"
 
 reference_image = Image.open(reference_path)
 reference_pixels = list(reference_image.getdata())
@@ -52,7 +52,7 @@ pixel_array = np.array(pixel_list,dtype=bool) # this stores booleans, true means
 # now we do a flood fill to assign groupIDs to all pixel objects (white pixels have groupID None)
 visited_spots = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a key of visited spots, False(0) means we haven't visited, True(1) means we have. use this for any given pixel to see if we've visited
 
-# points_by_group = []
+points_by_group = []
 groupID_array = np.array([[None for x in range(reference_size[0])]for y in range(reference_size[1])]) #2d array that stores the group id for a pixel at a point, None if it's a white pixel
 
 group_index = 0
@@ -71,14 +71,14 @@ for y in range(reference_size[1]):
                 while len(queue)!=0: #while queue isn't empty we keep looking at neighbors of the queue and assigning them IDs of said group
                     upNext = queue.pop()
                     groupID_array[upNext[1]][upNext[0]] = group_index #assigning the group index for this group
-                    # group.append(upNext)
+                    group.append(upNext)
                     visited_spots[upNext[1],upNext[0]] = True #marking this pixel as visited
                     for next_point in [[upNext[0]-1, upNext[1]], [upNext[0]+1, upNext[1]], [upNext[0], upNext[1]-1], [upNext[0], upNext[1]+1]]:
                         if next_point[0]>=0 and next_point[1]>=0 and upNext[0]<=x_size and upNext[1]<=y_size: #if location is valid 
                             if visited_spots[next_point[1]][next_point[0]] == 0 and pixel_array[next_point[1]][next_point[0]]: #if the pixel at the potential neighbor position isn't already visited and has a black pixel, we add to queue to check
                                 queue.append((next_point[0],next_point[1])) 
                 group_index +=1
-                # points_by_group.append(group)
+                points_by_group.append(group)
 
 
 
@@ -96,6 +96,7 @@ for y in range(reference_size[1]-1):
 #   pixel_array - 2D array pixel_array[y][x] yeilds True if there is a black pixel at (x,y), False if not
 #   groupID_array - 2D array pixel_array[y][x] yeilds yeilds the group ID of a pixel at (x,y), None if there is not black pixel there
 #   boundary_pixels - 2D array boundary_pixels[y][x] yeilds True if there (x,y) has a boundary pixel, False if not
+#   points_by_group - a python list that holds groups, each group is a list of coordinate values
 
 
 # saving an image of all the border pixels marked in red
@@ -133,3 +134,5 @@ reference_image = Image.new(mode="RGB", size=reference_size)
 reference_image.putdata(output_pixels)
 reference_image.save(f"images\{reference_name}_groups_marked.png")
 
+
+ 
