@@ -1,12 +1,16 @@
+import numpy as np
 from PIL import Image
+from collections import deque
 
 #opening the reference image
-reference_name = "test"
-reference_path = f"{reference_name}.jpg"
+reference_name = "penguin"
+reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
 reference_pixels = list(reference_image.getdata())
 reference_size = reference_image.size # getting the refence image's size in (x-pixles,y-pixels) format
+x_size = reference_size[0]
+y_size = reference_size[1]
 
 
 # making a greyscale version of the reference image
@@ -25,112 +29,85 @@ for p in reference:
         bw_reference.append((0,0,0))
 
 
-# creating pixel objects that can also hold other data (we'll hold them in a 2d list)
-class Pixel(): #defining a pixel class
-    def __init__(self, color, id, coordinates):
-        self.color = color
-        self.id = id
-        self.coordinates = coordinates
-        self.x = coordinates[0]
-        self.y = coordinates[1]
-        self.groupID = None
-        self.isBorder = False
-    
-    def set_groupID(self, groupID):
-        self.groupID = groupID
-
-    def __str__(self):
-        return(f"{self.color} | {self.id} | {self.coordinates}")
-
-pixel_objects = [] # a 2D list that will hold objects of the pixel class, access a pixel via pixel_objects[y][x]
+# To store the data we want, we'll use a series of 2d Arrays. These will store: bw pixel value, group number, is this pixel an edge pixel for its group
+ 
+#first we create an array for the black-white pixel value, black will be represented as True (1), white as False (0)
+pixel_list = [] # a 2D list as specified
 temp_list = []
-i=0
-for p in bw_reference: #converting all pixel values in bw_reference to Pixel objects and storing them in pixel_objects accordingly
+for p in bw_reference: #converting all pixel values in bw_reference to 0s and 1s and storing them in pixel_list accordingly
     if len(temp_list) == reference_size[0]:
-        pixel_objects.append(temp_list)
+        pixel_list.append(temp_list)
         temp_list = []
     
-    temp_list.append(Pixel(p,i, (i%reference_size[0], len(pixel_objects))))
+    if p[0] == 0:
+        temp_list.append(1)
+    else:
+        temp_list.append(0)
+pixel_list.append(temp_list)
 
-    i+=1
-pixel_objects.append(temp_list)
+pixel_array = np.array(pixel_list,dtype=bool) # this stores booleans, true means there is a black pixel at said location, false means there is not a black pixel at said location
 
-
-#defining terminal testing functions
-def print_by_group():
-    for x in pixel_objects:
-        temp = ""
-        for p in x:
-            if p.groupID == None:
-                temp += "0 "
-            else:
-                temp += str(p.groupID+1) + " "
-        print(temp)
-
-def print_by_value():
-    for x in pixel_objects:
-        temp = ""
-        for p in x:
-            if p.color == (255,255,255):
-                temp += ". "
-            else:
-                temp += "# "
-        print(temp)
 
 
 # now we do a flood fill to assign groupIDs to all pixel objects (white pixels have groupID None)
-visited_spots = [[0 for x in range(reference_size[0])]for y in range(reference_size[1])] # a key of visited spots, 0 means we haven't visited, 1 means we have. use this for any given pixel to see if we've visited
-points_by_group = []
+visited_spots = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a key of visited spots, False(0) means we haven't visited, True(1) means we have. use this for any given pixel to see if we've visited
 
+# points_by_group = []
+groupID_array = np.array([[None for x in range(reference_size[0])]for y in range(reference_size[1])]) #2d array that stores the group id for a pixel at a point, None if it's a white pixel
 
 group_index = 0
-for y in range(reference_size[1]-1):
-    for x in range(reference_size[0]-1):
-        curr = pixel_objects[y][x]
+for y in range(reference_size[1]):
+    for x in range(reference_size[0]):
+        curr = pixel_array[y][x] # gives boolean: True if pixel is black, False if not
 
-        if visited_spots[y][x] == 0: # if the pixel under consideration hasn't been visited
+        if not visited_spots[y][x]: # if the pixel under consideration hasn't been visited
 
-            if curr.color == (255,255,255): #if pixel is white we mark as visited and move on
-                visited_spots[y][x] = 1 
+            if not curr: #if location does not have a white we mark as visited and move on
+                visited_spots[y][x] = True 
             else:
-                queue = [] #create a queue
-                queue.append(curr) 
+                queue = deque() #create a queue
+                queue.append((x,y)) 
                 group = []
                 while len(queue)!=0: #while queue isn't empty we keep looking at neighbors of the queue and assigning them IDs of said group
-                    upNext = queue.pop(0)
-                    upNext.groupID = group_index #assigning the group index for this group
-                    group.append(upNext)
-                    visited_spots[upNext.y][upNext.x] = 1 #marking this pixel as visited
-                    for next_point in [[upNext.x-1, upNext.y], [upNext.x+1, upNext.y], [upNext.x, upNext.y-1], [upNext.x, upNext.y+1]]:
-                        try:                          
-                            if visited_spots[next_point[1]][next_point[0]] == 0 and pixel_objects[next_point[1]][next_point[0]].color != (255,255,255): #if the pixel at the potential neighbor position isn't already visited and isn't white, we add to queue to check
-                                queue.append(pixel_objects[next_point[1]][next_point[0]])  
-                        except: #if there is no pixel at this potential position
-                            pass
+                    upNext = queue.pop()
+                    groupID_array[upNext[1]][upNext[0]] = group_index #assigning the group index for this group
+                    # group.append(upNext)
+                    visited_spots[upNext[1],upNext[0]] = True #marking this pixel as visited
+                    for next_point in [[upNext[0]-1, upNext[1]], [upNext[0]+1, upNext[1]], [upNext[0], upNext[1]-1], [upNext[0], upNext[1]+1]]:
+                        if next_point[0]>=0 and next_point[1]>=0 and upNext[0]<=x_size and upNext[1]<=y_size: #if location is valid 
+                            if visited_spots[next_point[1]][next_point[0]] == 0 and pixel_array[next_point[1]][next_point[0]]: #if the pixel at the potential neighbor position isn't already visited and has a black pixel, we add to queue to check
+                                queue.append((next_point[0],next_point[1])) 
                 group_index +=1
-                points_by_group.append(group)
+                # points_by_group.append(group)
+
 
 
 # going through and marking the boundary pixels for each pixel group
-for x in pixel_objects:
-    for curr in x:
-        for next_point in [[curr.x-1, curr.y], [curr.x+1, curr.y], [curr.x, curr.y-1], [curr.x, curr.y+1]]: 
-            
-            try:                          
-                if pixel_objects[next_point[1]][next_point[0]].color == (255,255,255) and curr.groupID != None: #if the pixel at the potential neighbor position is white, we mark curr as a border pixel (curr also has to be part of a group)
-                    curr.isBorder = True
-            except:
-                pass
+boundary_pixles = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool)
+for y in range(reference_size[1]-1):
+    for x in range(reference_size[0]-1):
+        
+        for next_point in [[x-1, y], [x+1, y], [x, y-1], [x, y+1]]: 
+            if next_point[0]>=0 and next_point[1]>=0 and upNext[0]<=x_size and upNext[1]<=y_size: #if location is valid                          
+                if not pixel_array[next_point[1]][next_point[0]] and groupID_array[y][x]!=None: #if the pixel at the potential neighbor position is white (remember True means black), we mark curr as a border pixel (curr also has to be part of a group)
+                    boundary_pixles[y][x] = True
+
+# Now we have the following datastrucutres to keep track information about a pixel at a location (x,y)
+#   pixel_array - 2D array pixel_array[y][x] yeilds True if there is a black pixel at (x,y), False if not
+#   groupID_array - 2D array pixel_array[y][x] yeilds yeilds the group ID of a pixel at (x,y), None if there is not black pixel there
+#   boundary_pixels - 2D array boundary_pixels[y][x] yeilds True if there (x,y) has a boundary pixel, False if not
 
 
 output_pixels = []
-for x in pixel_objects:
-    for p in x:
-        if p.isBorder:
+for y in range(reference_size[1]):
+    for x in range(reference_size[0]):
+        
+        if boundary_pixles[y][x]:
             output_pixels.append((255,0,0))
         else:
             output_pixels.append((255,255,255))
+        
 
 reference_image = Image.new(mode="RGB", size=reference_size)
 reference_image.putdata(output_pixels)
-reference_image.save(f"{reference_name}_borders_marked.jpg")
+reference_image.save(f"images\{reference_name}_borders_marked.png")
