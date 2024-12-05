@@ -3,7 +3,7 @@ from PIL import Image
 from collections import deque
 
 #opening the reference image
-reference_name = "test_medium"
+reference_name = "test"
 reference_path = f"images\{reference_name}.jpg"
 
 reference_image = Image.open(reference_path)
@@ -148,4 +148,42 @@ reference_image.putdata(output_pixels)
 reference_image.save(f"images\{reference_name}_groups_marked.png")
 
 
-# now what we want to do is reduce the number of pixels
+# now what we want to do is reduce the number of pixels in each border group uniformly by a certain percentage
+reduction_factor = 0.75 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduced_boundaries = []
+for group in boundary_points_by_group:
+    reduced_group = []
+    if reduction_factor <= 0.5 and reduction_factor>=0.01: # lower bound so we don't get absurdly high numbers, negative numbers, or a divide by 0 error
+        # TODO: figure out how to max out (adjust beneath) based on density of group for this edge        
+        skip_num = round(1/reduction_factor)
+        index = 0
+        for p in group:
+            if index%skip_num != 0: #every skip_num points, we don't add the current point to the list
+                reduced_group.append(p)
+            index+=1
+    else:
+        # TODO: figure out how to max out (adjust beneath) based on density of group for this edge    
+        skip_num = round(1/(1-reduction_factor))
+        index = 0
+        for p in group:
+            if index%skip_num == 0: #every skip_num points, we add the current point to the list
+                reduced_group.append(p)
+            index+=1
+
+    reduced_boundaries.append(reduced_group)
+
+
+# saving an image of all the border pixels (now reduced) marked in red
+output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+for g in reduced_boundaries:
+    for p in g:
+        output_pixels[p[1]][p[0]] = (255,0,0)
+
+output = []
+for y in output_pixels:
+    for x in y:
+        output.append(x)
+
+reference_image = Image.new(mode="RGB", size=reference_size)
+reference_image.putdata(output)
+reference_image.save(f"images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
