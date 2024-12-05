@@ -155,9 +155,9 @@ for group in boundary_points_by_group:
     reduced_group = []
     if reduction_factor <= 0.5 and reduction_factor>=0.01: # lower bound so we don't get absurdly high numbers, negative numbers, or a divide by 0 error
         # TODO: figure out how to max out (adjust beneath) based on density of group for this edge        
-        skip_num = round(1/reduction_factor)
+        skip_num = round(1/reduction_factor)    
         index = 0
-        for p in group:
+        for p in sorted(group, key=lambda point: point[0] ** 2 + point[1] ** 2): # going through the points sorted by their euclidean distance from the origin
             if index%skip_num != 0: #every skip_num points, we don't add the current point to the list
                 reduced_group.append(p)
             index+=1
@@ -165,7 +165,7 @@ for group in boundary_points_by_group:
         # TODO: figure out how to max out (adjust beneath) based on density of group for this edge    
         skip_num = round(1/(1-reduction_factor))
         index = 0
-        for p in group:
+        for p in sorted(group, key=lambda point: point[0] ** 2 + point[1] ** 2): # going through the points sorted by their euclidean distance from the origin
             if index%skip_num == 0: #every skip_num points, we add the current point to the list
                 reduced_group.append(p)
             index+=1
