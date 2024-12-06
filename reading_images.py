@@ -183,7 +183,7 @@ for group in boundary_points_by_group:
     sorted_boundary_points.append(sorted_group)
 
     
-reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduction_factor = 0.75 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
     reduced_group = []
@@ -221,3 +221,19 @@ for y in output_pixels:
 reference_image = Image.new(mode="RGB", size=reference_size)
 reference_image.putdata(output)
 reference_image.save(f"images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
+
+
+# exporting the point data to a mesh
+with open(f"outputs\{reference_name}_output.obj", "w") as out:
+    face_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
+    for group in reduced_boundaries: #for each group
+        group_vertices = "\n"
+        group_faces = "f"
+        for point in group:
+            group_vertices += f"v {point[0]} {point[1]}\n" #storing this point
+            group_faces += f" {face_index}" #adding this vertex to this face list
+            face_index +=1 # must increment, and have tracked across groups
+    
+        out.write(f"\n# group: {groupID_array[group[0][1]][group[0][0]]}")
+        out.write(group_vertices)
+        out.write(group_faces+"\n")
