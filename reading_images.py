@@ -166,7 +166,7 @@ for group in boundary_points_by_group:
     queue = deque()
     queue.append(group[0]) # starting point will just be the first one in the group, it doesn't really matter where we start
     while len(queue)!=0:
-        curr = queue.pop()
+        curr = queue.pop() #pop returns an element from the right side of the queue, because append adds to the right, this is really functioning like a stack (don't yell at me, I know what I'm doing. Why didn't I call it stack? That's a great question, mind your own fucking business, I don't want to change it)
         sorted_group.append(curr) #add it to the next one
         visited_spots[curr[1]][curr[0]] = True
         for next_point in [[curr[0]-1, curr[1]], [curr[0]+1, curr[1]], [curr[0], curr[1]-1], [curr[0], curr[1]+1]]: #looking at the locations directly adjacent first
