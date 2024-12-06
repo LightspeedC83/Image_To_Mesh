@@ -149,15 +149,49 @@ reference_image.save(f"images\{reference_name}_groups_marked.png")
 
 
 # now what we want to do is reduce the number of pixels in each border group uniformly by a certain percentage
-reduction_factor = 0.75 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
-reduced_boundaries = []
+
+# first we must rearrainge the order of the points in the boundary_points_by_group list such that points that are next to eachother in the image are next to eachother in the list
+# to do this we're basically going to be doing a flood fill algorithm on just the border points
+sorted_boundary_points = []
 for group in boundary_points_by_group:
+    sorted_group =[]
+
+    visited_spots = np.array([[1 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a key of visited spots, False(0) means we haven't visited, True(1) means we have. we set all initially to true and then mark false the points in the group (this ensures that we only consider points in the group)
+    point_locations = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a 2D array of point locations, True means there is a point at said location, False means there is not
+    for p in group:
+        point_locations[p[1]][p[0]] = True
+        visited_spots[p[1]][p[0]] = False
+
+    # now we start the flood fill on this group's border
+    queue = deque()
+    queue.append(group[0]) # starting point will just be the first one in the group, it doesn't really matter where we start
+    while len(queue)!=0:
+        curr = queue.pop()
+        sorted_group.append(curr) #add it to the next one
+        visited_spots[curr[1]][curr[0]] = True
+        for next_point in [[curr[0]-1, curr[1]], [curr[0]+1, curr[1]], [curr[0], curr[1]-1], [curr[0], curr[1]+1]]: #looking at the locations directly adjacent first
+            if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
+                if not visited_spots[next_point[1]][next_point[0]]: #if hasn't been visited
+                    queue.append(next_point)
+                    visited_spots[next_point[1]][next_point[0]] = True
+        for next_point in [[curr[0]-1, curr[1]-1], [curr[0]-1, curr[1]+1], [curr[0]+1, curr[1]-1], [curr[0]+1, curr[1]+1]]: # now looking at the locations in the corner
+            if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
+                if not visited_spots[next_point[1]][next_point[0]]: #if hasn't been visited
+                    queue.append(next_point)
+                    visited_spots[next_point[1]][next_point[0]] = True
+
+    sorted_boundary_points.append(sorted_group)
+
+    
+reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduced_boundaries = []
+for group in sorted_boundary_points:
     reduced_group = []
     if reduction_factor <= 0.5 and reduction_factor>=0.01: # lower bound so we don't get absurdly high numbers, negative numbers, or a divide by 0 error
         # TODO: figure out how to max out (adjust beneath) based on density of group for this edge        
         skip_num = round(1/reduction_factor)    
         index = 0
-        for p in sorted(group, key=lambda point: point[0] ** 2 + point[1] ** 2): # going through the points sorted by their euclidean distance from the origin
+        for p in group: # going through the points sorted by their euclidean distance from the origin
             if index%skip_num != 0: #every skip_num points, we don't add the current point to the list
                 reduced_group.append(p)
             index+=1
@@ -165,7 +199,7 @@ for group in boundary_points_by_group:
         # TODO: figure out how to max out (adjust beneath) based on density of group for this edge    
         skip_num = round(1/(1-reduction_factor))
         index = 0
-        for p in sorted(group, key=lambda point: point[0] ** 2 + point[1] ** 2): # going through the points sorted by their euclidean distance from the origin
+        for p in group: # going through the points sorted by their euclidean distance from the origin
             if index%skip_num == 0: #every skip_num points, we add the current point to the list
                 reduced_group.append(p)
             index+=1
