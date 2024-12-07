@@ -4,7 +4,7 @@ from collections import deque
 
 #opening the reference image
 reference_name = "test"
-reference_path = f"images\{reference_name}.jpg"
+reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
 reference_pixels = list(reference_image.getdata())
@@ -183,7 +183,7 @@ for group in boundary_points_by_group:
     sorted_boundary_points.append(sorted_group)
 
     
-reduction_factor = 0.75 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
     reduced_group = []
@@ -222,18 +222,80 @@ reference_image = Image.new(mode="RGB", size=reference_size)
 reference_image.putdata(output)
 reference_image.save(f"images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
 
+#removing any empty lists (which may or may not be in here)
+i = 0
+for g in reduced_boundaries:
+    if len(g) == 0:
+        del reduced_boundaries[i]
+        i-=1
+    i+=1
+
+# saving an image of the reduced boundary points with all the points of the same group assigned the same random color
+output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+for g in reduced_boundaries:
+    color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
+    for p in g:
+        output_pixels[p[1]][p[0]] = color
+out = []
+for y in output_pixels:
+    for x in y:
+        out.append(x)
+reference_image = Image.new(mode="RGB", size=reference_size)
+reference_image.putdata(out)
+reference_image.save(f"images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
+
+
+#saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
+output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+for g in reduced_boundaries:
+    color_value = 0
+    for p in g:
+        output_pixels[p[1]][p[0]] = (color_value,0,0)
+        color_value += 5
+        if color_value >= 255:
+            color_value = 255
+
+output = []
+for y in output_pixels:
+    for x in y:
+        output.append(x)
+
+reference_image = Image.new(mode="RGB", size=reference_size)
+reference_image.putdata(output)
+reference_image.save(f"images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
 
 # exporting the point data to a mesh
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
     face_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
+    # first_vertices = [] #for debugging purposes
+    # last_vertices = [] #also for debuggin purposes
+    # second_vertices = [] #also aslo for dgebugin
     for group in reduced_boundaries: #for each group
         group_vertices = "\n"
         group_faces = "f"
+        # first_vertices.append((group[0], face_index))
         for point in group:
+            # if first_vertices[-1][1]+1 == face_index:
+            #     second_vertices.append((point,face_index))
             group_vertices += f"v {point[0]} {point[1]}\n" #storing this point
             group_faces += f" {face_index}" #adding this vertex to this face list
             face_index +=1 # must increment, and have tracked across groups
-    
+        
+        # if len(group) != 0:
+        #     last_vertices.append((group[-2],face_index))   
+      
         out.write(f"\n# group: {groupID_array[group[0][1]][group[0][0]]}")
         out.write(group_vertices)
         out.write(group_faces+"\n")
+    
+    # for x in last_vertices:
+    #     out.write(f"\n#last vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 6 \nf {face_index} {x[1]}")
+    #     face_index+=1
+    
+    # for x in first_vertices:
+    #     out.write(f"\n#first vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 2 \nf {face_index} {x[1]}")
+    #     face_index+=1
+        
+    # for x in second_vertices:
+    #     out.write(f"\n#second vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 4 \nf {face_index} {x[1]}")
+    #     face_index+=1
