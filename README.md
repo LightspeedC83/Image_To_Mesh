@@ -36,3 +36,4 @@ The mesh creation process is to go through each point in a group, add it to the 
     - because the list is already mostly correct, most of the points we relocate will actually be out of place. with fine tuning of benchmark calculation and margin, we should be able to get good preformance.
 
 ### Extending the mesh 
+Once you have the points in order, extending the mesh to make the image 3D is pretty trivial, all you do is copy the faces we already made for each group, with an offset z-value. After this, we simply make a face with each point in the list, the next point in the list, and the two corresponding points on the offset face (the last point in the list wraps around to make a face with the first point in the list).

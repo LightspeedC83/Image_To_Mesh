@@ -174,7 +174,7 @@ for group in sorted_boundary_points:
 
     reduced_boundaries.append(reduced_group)
 
-print("cleaning up the boundaries...")
+
 # removing any empty lists (which may or may not be in here)
 i = 0
 for g in reduced_boundaries:
@@ -227,6 +227,7 @@ for g in range(len(reduced_boundaries)):
             reduced_boundaries[g].insert(best_index, group[best_index])
             del reduced_boundaries[g][i+2]
     
+
 # removing any duplicate points within groups (i don't want to just convert to a set and convert back because order may or may not be preserved, why didn't i put this bit of code back when I got rid of empty groups? that's a great question, I origionally had done exactly that, but after doing the relocation of outliers step, i'd get duplicate points soooooo I'm putting this bit of code here...)
 seen_points = {}
 reduced_boundaries_removed_duplicates = []
