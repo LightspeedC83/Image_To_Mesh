@@ -1,9 +1,10 @@
 import numpy as np
 from PIL import Image
 from collections import deque
+import math
 
 #opening the reference image
-reference_name = "test"
+reference_name = "penguin"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -112,41 +113,6 @@ for g in points_by_group:
 #   bounary_points_by_group - a python list that holds lists of boundary pixels for each group
 
 
-# saving an image of all the border pixels marked in red
-output_pixels = []
-for y in range(reference_size[1]):
-    for x in range(reference_size[0]):
-        
-        if boundary_pixles[y][x]:
-            output_pixels.append((255,0,0))
-        else:
-            output_pixels.append((255,255,255))
-        
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(output_pixels)
-reference_image.save(f"images\{reference_name}_borders_marked.png")
-
-# saving an image with all the pixels of the same group assigned the same random color
-color_groups ={}
-color_groups[None] = (255,255,255) #white if it's a white pixel
-
-output_pixels = []
-for y in range(reference_size[1]):
-    for x in range(reference_size[0]):
-        color = None
-        try:
-            color = color_groups[groupID_array[y][x]]
-        except KeyError:
-            color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
-            color_groups[groupID_array[y][x]] = color
-        if boundary_pixles[y][x]: #if it's a boundary pixel, we make it black
-            color = (0,0,0)
-        output_pixels.append(color)
-
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(output_pixels)
-reference_image.save(f"images\{reference_name}_groups_marked.png")
-
 
 # now what we want to do is reduce the number of pixels in each border group uniformly by a certain percentage
 
@@ -207,22 +173,7 @@ for group in sorted_boundary_points:
     reduced_boundaries.append(reduced_group)
 
 
-# saving an image of all the border pixels (now reduced) marked in red
-output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
-for g in reduced_boundaries:
-    for p in g:
-        output_pixels[p[1]][p[0]] = (255,0,0)
-
-output = []
-for y in output_pixels:
-    for x in y:
-        output.append(x)
-
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(output)
-reference_image.save(f"images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
-
-#removing any empty lists (which may or may not be in here)
+# removing any empty lists (which may or may not be in here)
 i = 0
 for g in reduced_boundaries:
     if len(g) == 0:
@@ -230,39 +181,49 @@ for g in reduced_boundaries:
         i-=1
     i+=1
 
-# saving an image of the reduced boundary points with all the points of the same group assigned the same random color
-output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
-for g in reduced_boundaries:
-    color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
-    for p in g:
-        output_pixels[p[1]][p[0]] = color
-out = []
-for y in output_pixels:
-    for x in y:
-        out.append(x)
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(out)
-reference_image.save(f"images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
 
+def euclidean_distance(point_one, point_two):
+    """calculates euclidean_distance between to points, in the form (int, int)"""   
+    return math.sqrt((point_two[0]-point_one[0])**2 + (point_two[1]-point_one[1])**2)
 
-#saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
-output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
-for g in reduced_boundaries:
-    color_value = 0
-    for p in g:
-        output_pixels[p[1]][p[0]] = (color_value,0,0)
-        color_value += 5
-        if color_value >= 255:
-            color_value = 255
+# reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go
+for g in range(len(reduced_boundaries)):
+    group = reduced_boundaries[g]
+    # first we find the average distance between points
+    sum = euclidean_distance(group[0], group[-1])
+    divisor = 1
+    for i in range(len(group)-1):
+        sum += euclidean_distance(group[i], group[i+1])
+        divisor += 1
+    
+    avg_distance = sum/divisor
+    
+    for i in range(len(group)-1):
+        
+        if euclidean_distance(group[i],group[i+1]) > avg_distance: #if the distance between this point and the next is higher than the benchmark (which at this point is just the avg distance between points for this group)
+            #this means that the point at index i+1 is potentially out of place
+            best_index = i+1 #start best_index at the index its currently at
+            best_left_distance = euclidean_distance(group[i],group[i+1]) #start with current left distance
+            try:
+                best_right_distance = euclidean_distance(group[i+1], group[i+2]) #start with current right distance
+            except IndexError: #in this case i+1 is the end of the list, and we are wrapping around
+                best_right_distance = euclidean_distance(group[i+1], group[0])
+            
+            for j in range(len(group)-1):
+                left_distance = euclidean_distance(group[i+1], group[j])
+                right_distance = euclidean_distance(group[i+1], group[j+1])
+                if left_distance < best_left_distance and right_distance < best_right_distance:
+                    best_index = j+1 #use j+1 because if we insert at best_index we want the point at i+1 to be surrounded by the points at j (on left) and j+1 (on right)
+                    best_left_distance = left_distance
+                    best_right_distance = right_distance
+            if euclidean_distance(group[i+1], group[-1]) < best_left_distance and euclidean_distance(group[i+1], group[0]) < best_right_distance: #have to do a check for the loop between the first and last elements
+                best_index = 0 
+            
+            #now we insert the point at i+1 at the best index we've just found (insert first, then remove from where it got shifted to)
+            reduced_boundaries[g].insert(best_index, group[best_index])
+            del reduced_boundaries[g][i+2]
+    
 
-output = []
-for y in output_pixels:
-    for x in y:
-        output.append(x)
-
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(output)
-reference_image.save(f"images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
 
 # exporting the point data to a mesh
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
@@ -299,3 +260,96 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
     # for x in second_vertices:
     #     out.write(f"\n#second vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 4 \nf {face_index} {x[1]}")
     #     face_index+=1
+
+
+
+def save_progression_images():
+
+    # saving an image of all the border pixels marked in red
+    output_pixels = []
+    for y in range(reference_size[1]):
+        for x in range(reference_size[0]):
+            
+            if boundary_pixles[y][x]:
+                output_pixels.append((255,0,0))
+            else:
+                output_pixels.append((255,255,255))
+            
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(output_pixels)
+    reference_image.save(f"images\{reference_name}_borders_marked.png")
+
+
+    # saving an image with all the pixels of the same group assigned the same random color
+    color_groups ={}
+    color_groups[None] = (255,255,255) #white if it's a white pixel
+
+    output_pixels = []
+    for y in range(reference_size[1]):
+        for x in range(reference_size[0]):
+            color = None
+            try:
+                color = color_groups[groupID_array[y][x]]
+            except KeyError:
+                color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
+                color_groups[groupID_array[y][x]] = color
+            if boundary_pixles[y][x]: #if it's a boundary pixel, we make it black
+                color = (0,0,0)
+            output_pixels.append(color)
+
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(output_pixels)
+    reference_image.save(f"images\{reference_name}_groups_marked.png")
+
+
+    # saving an image of all the border pixels (now reduced) marked in red
+    output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+    for g in reduced_boundaries:
+        for p in g:
+            output_pixels[p[1]][p[0]] = (255,0,0)
+
+    output = []
+    for y in output_pixels:
+        for x in y:
+            output.append(x)
+
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(output)
+    reference_image.save(f"images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")    
+
+
+    # saving an image of the reduced boundary points with all the points of the same group assigned the same random color
+    output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+    for g in reduced_boundaries:
+        color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
+        for p in g:
+            output_pixels[p[1]][p[0]] = color
+    out = []
+    for y in output_pixels:
+        for x in y:
+            out.append(x)
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(out)
+    reference_image.save(f"images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
+
+
+    #saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
+    output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+    for g in reduced_boundaries:
+        color_value = 0
+        for p in g:
+            output_pixels[p[1]][p[0]] = (color_value,0,0)
+            color_value += 5
+            if color_value >= 255:
+                color_value = 255
+
+    output = []
+    for y in output_pixels:
+        for x in y:
+            output.append(x)
+
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(output)
+    reference_image.save(f"images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
+
+# save_progression_images()
