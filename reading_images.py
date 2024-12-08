@@ -174,7 +174,7 @@ for group in sorted_boundary_points:
 
     reduced_boundaries.append(reduced_group)
 
-
+print("cleaning up the boundaries...")
 # removing any empty lists (which may or may not be in here)
 i = 0
 for g in reduced_boundaries:
@@ -227,20 +227,33 @@ for g in range(len(reduced_boundaries)):
             reduced_boundaries[g].insert(best_index, group[best_index])
             del reduced_boundaries[g][i+2]
     
+# removing any duplicate points within groups (i don't want to just convert to a set and convert back because order may or may not be preserved, why didn't i put this bit of code back when I got rid of empty groups? that's a great question, I origionally had done exactly that, but after doing the relocation of outliers step, i'd get duplicate points soooooo I'm putting this bit of code here...)
+seen_points = {}
+reduced_boundaries_removed_duplicates = []
+for group in reduced_boundaries:
+    non_duplicates = []
+    for point in group:
+        if seen_points.get((point[1],point[0])) == None: #if we haven't seen the point we're looking at, we add it to new group list and mark it as visited
+            non_duplicates.append(point)
+            seen_points[(point[1],point[0])] = True
+    reduced_boundaries_removed_duplicates.append(non_duplicates)
+reduced_boundaries = reduced_boundaries_removed_duplicates
 
 
 print("writing to an .obj file...")
 
 # exporting the point data to a mesh
-obj_vertex_numbers = {}
 extrusion = 2 #how much extrusion the mesh should be given in the z direction
+open_backed = False
+
+obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
     vertex_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
     # creating the vertices and the n-gon faces based on the image for each group
     for group in reduced_boundaries: 
         group_vertices = "\n"
         group_faces = "f"
-
+        
         for point in group:
             group_vertices += f"v {point[0]} {point[1]} 0\n" #storing this point
             group_faces += f" {vertex_index}" #adding this vertex to this face list
@@ -256,7 +269,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
         for group in reduced_boundaries:
             extruded_vertices = "\n"
 
-            #saving all the vertices offset on the z-axis by the extrusion value
+            # saving all the vertices offset on the z-axis by the extrusion value
             for point in group:
                 extruded_vertices += f"v {point[0]} {point[1]} {extrusion}\n"
                 obj_vertex_numbers[(point[0], point[1], extrusion)] = vertex_index
@@ -269,6 +282,15 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 out.write(f"f {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], extrusion)]}\n")
             #have to include link between last and first points in the list
             out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
+
+        if not open_backed: # closes the back of the extruded part with an n-gon
+            for group in reduced_boundaries:
+                face = "f"
+                for point in group:
+                    face += f" {obj_vertex_numbers[(point[0],point[1], extrusion)]}"
+                face += f" {obj_vertex_numbers[(group[0][0],group[0][1], extrusion)]}"
+                out.write(f"# Back face for group: {groupID_array[group[0][1]][group[0][0]]}\n")
+                out.write(face)
 
 
 def save_progression_images():
