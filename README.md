@@ -19,6 +19,7 @@ Using this approach on the boundary_points_by_group point groups, does not produ
 The good thing is that now that we've sorted the points such that points close to eachother are next to eachother, this property is preserved after the uniform reduction of points. So the reduced_boundaries list of boundary groups has points next to eachother that are next to eachother, this will be advantageous for the creation faces when we make the mesh. 
 
 ## Mesh creation
+### What is an OBJ file?
 This program will turn the image into a .obj file. For reference, see the [wikipedia page](https://en.wikipedia.org/wiki/Wavefront_.obj_file) for .obj files. Some main points of information about obj files that will be useful to understand this program are:
 - a vertex is specified via a line starting with the letter v, followed by (x,y,z) coordinate
     - note that you can leave z coordinate blank and it assumes 0 when it's being read
@@ -26,9 +27,12 @@ This program will turn the image into a .obj file. For reference, see the [wikip
     - note that you can just define in terms of vertex_index (eg. f 1 2 3 4 would make a face using the 1st, 2nd, 3rd, and 4th vertices you define in the file, with edges in that order)
 - comments in an obj file are preceded by a # character (just like python)
 
+### creating faces based on the image
 The mesh creation process is to go through each point in a group, add it to the obj file as a vertex, store the vertex index of that point and then go through the boundary points and add them as face (producing an n-gon face using the points in the group). The problem is that while the points in reduced_boundares are sorted enough (because it came from a reduction of sorted_boundary_points), they aren't completely sorted. They were mostly sorted, sorted enough that the reduction process was uniform enough. But the problem is the face creation from a boundary point list, making the face with just one vertex out of order could ruin the geometry of the mesh and obscure the shape we are trying to represent. The problem now is how do we efficiently sort points such that points next to eachother on the border are next to eachother in the list. This is essentially the same problem as before (but now it's slightly different because we know that most of the points that should be next to eachother on the boundary are next to eachother in the list). We could use a brute force algorithm goes through each point and calculates the two closest points to it on the boundary and makes sure that it's situated betweeen both of those points in the list (if not, then it inserts itself where it needs to be). However, this would be computationally expensive, becuase for each point in the border you'd have to check all the other points, yielding O(n^n) complexity, which is (in a word) poo-poo. Instead, we'll take advantage of the fact that the list is mostly in the order we want already. This algorgihtm is described below:
 - we calculate the average distance between two adjacent points in the list
     - this will serve as a benchmark by which to measure the points in the list. points that are out of place, will be more likely to have a distance to their neighbor higher than the benchmark 
-    - also consider using the distance based on the skip_index (assuming the points in the list are directly adjacent before reduction, which is not an unfair assumption)
+    - may also want to consider using the distance based on the skip_index (assuming the points in the list are directly adjacent before reduction, which is not an unfair assumption)
 - go through each point in the list, get the distance to the next point, compare the distance to the benchmark, if the distance and benchmark values are off by some margin, then take that next point and insert it into the list where it should go (ie. the position where it has the smallest distance between itself and its two neighbors.)
     - because the list is already mostly correct, most of the points we relocate will actually be out of place. with fine tuning of benchmark calculation and margin, we should be able to get good preformance.
+
+### Extending the mesh 

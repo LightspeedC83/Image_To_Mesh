@@ -4,7 +4,7 @@ from collections import deque
 import math
 
 #opening the reference image
-reference_name = "penguin"
+reference_name = "test"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -49,7 +49,7 @@ pixel_list.append(temp_list)
 pixel_array = np.array(pixel_list,dtype=bool) # this stores booleans, true means there is a black pixel at said location, false means there is not a black pixel at said location
 
 
-
+print("doing flood fill...")
 # now we do a flood fill to assign groupIDs to all pixel objects (white pixels have groupID None)
 visited_spots = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a key of visited spots, False(0) means we haven't visited, True(1) means we have. use this for any given pixel to see if we've visited
 
@@ -82,7 +82,7 @@ for y in range(reference_size[1]):
                 points_by_group.append(group)
 
 
-
+print("identifying boundaries...")
 # going through and marking the boundary pixels for each pixel group
 boundary_pixles = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool)
 for y in range(reference_size[1]):
@@ -116,6 +116,7 @@ for g in points_by_group:
 
 # now what we want to do is reduce the number of pixels in each border group uniformly by a certain percentage
 
+print("doing flood fill on boundary points...")
 # first we must rearrainge the order of the points in the boundary_points_by_group list such that points that are next to eachother in the image are next to eachother in the list
 # to do this we're basically going to be doing a flood fill algorithm on just the border points
 sorted_boundary_points = []
@@ -148,7 +149,8 @@ for group in boundary_points_by_group:
 
     sorted_boundary_points.append(sorted_group)
 
-    
+
+print("reducing the boundaries...")
 reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
@@ -181,6 +183,8 @@ for g in reduced_boundaries:
         i-=1
     i+=1
 
+
+print("reloacting outliers in the boundary...")
 
 def euclidean_distance(point_one, point_two):
     """calculates euclidean_distance between to points, in the form (int, int)"""   
@@ -225,42 +229,46 @@ for g in range(len(reduced_boundaries)):
     
 
 
+print("writing to an .obj file...")
+
 # exporting the point data to a mesh
+obj_vertex_numbers = {}
+extrusion = 2 #how much extrusion the mesh should be given in the z direction
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
-    face_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
-    # first_vertices = [] #for debugging purposes
-    # last_vertices = [] #also for debuggin purposes
-    # second_vertices = [] #also aslo for dgebugin
-    for group in reduced_boundaries: #for each group
+    vertex_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
+    # creating the vertices and the n-gon faces based on the image for each group
+    for group in reduced_boundaries: 
         group_vertices = "\n"
         group_faces = "f"
-        # first_vertices.append((group[0], face_index))
+
         for point in group:
-            # if first_vertices[-1][1]+1 == face_index:
-            #     second_vertices.append((point,face_index))
-            group_vertices += f"v {point[0]} {point[1]}\n" #storing this point
-            group_faces += f" {face_index}" #adding this vertex to this face list
-            face_index +=1 # must increment, and have tracked across groups
-        
-        # if len(group) != 0:
-        #     last_vertices.append((group[-2],face_index))   
-      
+            group_vertices += f"v {point[0]} {point[1]} 0\n" #storing this point
+            group_faces += f" {vertex_index}" #adding this vertex to this face list
+            obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index #keeping track of this vertex's index
+            vertex_index +=1 # must increment, and have tracked across groups
+
         out.write(f"\n# group: {groupID_array[group[0][1]][group[0][0]]}")
         out.write(group_vertices)
         out.write(group_faces+"\n")
     
-    # for x in last_vertices:
-    #     out.write(f"\n#last vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 6 \nf {face_index} {x[1]}")
-    #     face_index+=1
-    
-    # for x in first_vertices:
-    #     out.write(f"\n#first vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 2 \nf {face_index} {x[1]}")
-    #     face_index+=1
-        
-    # for x in second_vertices:
-    #     out.write(f"\n#second vertex in group: {groupID_array[x[0][1]][x[0][0]]}\nv {x[0][0]} {x[0][1]} 4 \nf {face_index} {x[1]}")
-    #     face_index+=1
+    if extrusion != 0:
+        # creating the vertices and faces for the extruded
+        for group in reduced_boundaries:
+            extruded_vertices = "\n"
 
+            #saving all the vertices offset on the z-axis by the extrusion value
+            for point in group:
+                extruded_vertices += f"v {point[0]} {point[1]} {extrusion}\n"
+                obj_vertex_numbers[(point[0], point[1], extrusion)] = vertex_index
+                vertex_index +=1
+
+            out.write(f"\n# Extruded vertices for group: {groupID_array[group[0][1]][group[0][0]]}")
+            out.write(extruded_vertices)
+
+            for i in range(len(group)-1):
+                out.write(f"f {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], extrusion)]}\n")
+            #have to include link between last and first points in the list
+            out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
 
 
 def save_progression_images():
@@ -333,23 +341,23 @@ def save_progression_images():
     reference_image.save(f"images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
 
 
-    #saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
-    output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
-    for g in reduced_boundaries:
-        color_value = 0
-        for p in g:
-            output_pixels[p[1]][p[0]] = (color_value,0,0)
-            color_value += 5
-            if color_value >= 255:
-                color_value = 255
+    # #saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
+    # output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+    # for g in reduced_boundaries:
+    #     color_value = 0
+    #     for p in g:
+    #         output_pixels[p[1]][p[0]] = (color_value,0,0)
+    #         color_value += 5
+    #         if color_value >= 255:
+    #             color_value = 255
 
-    output = []
-    for y in output_pixels:
-        for x in y:
-            output.append(x)
+    # output = []
+    # for y in output_pixels:
+    #     for x in y:
+    #         output.append(x)
 
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output)
     reference_image.save(f"images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
 
-# save_progression_images()
+save_progression_images()
