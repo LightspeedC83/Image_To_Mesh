@@ -176,10 +176,10 @@ for group in sorted_boundary_points:
     reduced_boundaries.append(reduced_group)
 
 
-# removing any empty lists (which may or may not be in here)
+# removing any empty lists (which may or may not be in here) as well as any groups that have 2 or fewer vertices (as you need 3 vertices to make a face)
 i = 0
 for g in reduced_boundaries:
-    if len(g) == 0:
+    if len(g) <= 2:
         del reduced_boundaries[i]
         i-=1
     i+=1
@@ -191,43 +191,50 @@ def euclidean_distance(point_one, point_two):
     """calculates euclidean_distance between to points, in the form (int, int)"""   
     return math.sqrt((point_two[0]-point_one[0])**2 + (point_two[1]-point_one[1])**2)
 
-# reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go
-for g in range(len(reduced_boundaries)):
-    group = reduced_boundaries[g]
-    # first we find the average distance between points
-    sum = euclidean_distance(group[0], group[-1])
-    divisor = 1
-    for i in range(len(group)-1):
-        sum += euclidean_distance(group[i], group[i+1])
-        divisor += 1
-    
-    avg_distance = sum/divisor
-    
-    for i in range(len(group)-1):
+# reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go, we make a function that does this on a generic list of the same structure as reduced_boundaries as it will be useful later
+def relocate_points(boundary_points_input):
+    """function that will, given an input list in the form [[(x1,y1),(x2,y2), ...], [(x3,y3),(x4,y4), ...], ...], 
+    will identify outlier points and relocate them in the list to their proper position such that points that are 
+    next to eachother on the boundary are next to eachother in the list. This function doesn't return anything, 
+    it just modifies the list."""
+
+    for g in range(len(boundary_points_input)):
+        group = boundary_points_input[g]
+        # first we find the average distance between adjacent points
+        sum = euclidean_distance(group[0], group[-1])
+        divisor = 1
+        for i in range(len(group)-1):
+            sum += euclidean_distance(group[i], group[i+1])
+            divisor += 1
         
-        if euclidean_distance(group[i],group[i+1]) > avg_distance: #if the distance between this point and the next is higher than the benchmark (which at this point is just the avg distance between points for this group)
-            #this means that the point at index i+1 is potentially out of place
-            best_index = i+1 #start best_index at the index its currently at
-            best_left_distance = euclidean_distance(group[i],group[i+1]) #start with current left distance
-            try:
-                best_right_distance = euclidean_distance(group[i+1], group[i+2]) #start with current right distance
-            except IndexError: #in this case i+1 is the end of the list, and we are wrapping around
-                best_right_distance = euclidean_distance(group[i+1], group[0])
+        avg_distance = sum/divisor
+        
+        for i in range(len(group)-1):
             
-            for j in range(len(group)-1):
-                left_distance = euclidean_distance(group[i+1], group[j])
-                right_distance = euclidean_distance(group[i+1], group[j+1])
-                if left_distance < best_left_distance and right_distance < best_right_distance:
-                    best_index = j+1 #use j+1 because if we insert at best_index we want the point at i+1 to be surrounded by the points at j (on left) and j+1 (on right)
-                    best_left_distance = left_distance
-                    best_right_distance = right_distance
-            if euclidean_distance(group[i+1], group[-1]) < best_left_distance and euclidean_distance(group[i+1], group[0]) < best_right_distance: #have to do a check for the loop between the first and last elements
-                best_index = 0 
-            
-            #now we insert the point at i+1 at the best index we've just found (insert first, then remove from where it got shifted to)
-            reduced_boundaries[g].insert(best_index, group[best_index])
-            del reduced_boundaries[g][i+2]
-    
+            if euclidean_distance(group[i],group[i+1]) > avg_distance: #if the distance between this point and the next is higher than the benchmark (which at this point is just the avg distance between points for this group)
+                #this means that the point at index i+1 is potentially out of place
+                best_index = i+1 #start best_index at the index its currently at
+                best_left_distance = euclidean_distance(group[i],group[i+1]) #start with current left distance
+                try:
+                    best_right_distance = euclidean_distance(group[i+1], group[i+2]) #start with current right distance
+                except IndexError: #in this case i+1 is the end of the list, and we are wrapping around
+                    best_right_distance = euclidean_distance(group[i+1], group[0])
+                
+                for j in range(len(group)-1):
+                    left_distance = euclidean_distance(group[i+1], group[j])
+                    right_distance = euclidean_distance(group[i+1], group[j+1])
+                    if left_distance < best_left_distance and right_distance < best_right_distance:
+                        best_index = j+1 #use j+1 because if we insert at best_index we want the point at i+1 to be surrounded by the points at j (on left) and j+1 (on right)
+                        best_left_distance = left_distance
+                        best_right_distance = right_distance
+                if euclidean_distance(group[i+1], group[-1]) < best_left_distance and euclidean_distance(group[i+1], group[0]) < best_right_distance: #have to do a check for the loop between the first and last elements
+                    best_index = 0 
+                
+                #now we insert the point at i+1 at the best index we've just found (insert first, then remove from where it got shifted to)
+                boundary_points_input[g].insert(best_index, group[best_index])
+                del boundary_points_input[g][i+2]
+
+relocate_points(reduced_boundaries)
 
 # removing any duplicate points within groups (i don't want to just convert to a set and convert back because order may or may not be preserved, why didn't i put this bit of code back when I got rid of empty groups? that's a great question, I origionally had done exactly that, but after doing the relocation of outliers step, i'd get duplicate points soooooo I'm putting this bit of code here...)
 seen_points = {}
@@ -249,7 +256,7 @@ extrusion = 0 #how much extrusion the mesh should be given in the z direction
 open_backed = False
 create_offset_socket = True
 offset_scalar = 2
-offset_point_distance_proportion = 0.25
+offset_point_distance_proportion = 0.3
 
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
@@ -300,89 +307,42 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
     if create_offset_socket and offset_scalar != 0:
         offset_boundary_points = []
         for group in reduced_boundaries:
-            if (len(group)>2):  # if there is just two point in a group, we'll get errors; if 2, we'll get shit mesh 
-                polygon = s.Polygon(group)
-                offset_group = []
+            
+            polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape
+            offset_group = []
 
-                for i in range(len(group)-1):
-                    #getting the possible boundary points on one side of the boundary
-                    candidates_side_one = [] #contains two points on one side of the boundary curve
-                    #getting the point from the normal vector between point at i-1 and point at i
-                    n = (group[i-1][1]-group[i][1], -1*(group[i-1][0]-group[i][0])) # if i=0, then this will reach back around to the point at the end of the list, meaning group[i-1] will be group[-1] (Note: it's very important that the -1* component is different when looking back to when looking forward)
-                    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
-                    n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                    candidates_side_one.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) #TODO: consider making a function that calculates and returns point based on two inputted points and an offset?
-
-                    #getting point from normal vector between point at i and point at i+1
-                    n = (-1*(group[i+1][1]-group[i][1]), group[i+1][0]-group[i][0]) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
-                    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
-                    n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                    # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)
-                    if euclidean_distance(candidates_side_one[0], (group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
-                        candidates_side_one.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
-
-                    #getting the possible boundary points on the other side of the boundary
-                    candidates_side_two = [] #contains two points on one side of the boundary curve
-                    #getting the point from the normal vector between point at i-1 and point at i
-                    n = (-1*(group[i-1][1]-group[i][1]), group[i-1][0]-group[i][0]) # if i=0, then this will reach back around to the point at the end of the list, meaning group[i-1] will be group[-1] (Note: it's very important that the -1* component is different when looking back to when looking forward)
-                    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
-                    n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                    candidates_side_two.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
-
-                    #getting point from normal vector between point at i and point at i+1
-                    n = (group[i+1][1]-group[i][1], -1*(group[i+1][0]-group[i][0])) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
-                    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
-                    n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                    # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)
-                    if euclidean_distance(candidates_side_two[0], (group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
-                        candidates_side_two.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
-
-                    # deciding which candidate side we should use
-                    use_side_one = True
-                    for candidate in candidates_side_one:
-                        # checking if either of the points in candidate_side_one fall inside the shape
-                        if polygon.contains(s.Point(candidate)): # if the candidate point falls inside the shape, we use side two
-                            use_side_one = False
-                    
-                    if use_side_one: #we use side one
-                        for candidate in candidates_side_one:
-                            offset_group.append(candidate)
-                    else: #we use side two
-                        for candidate in candidates_side_two:
-                            if not polygon.contains(s.Point(candidate)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision)
-                                offset_group.append(candidate)
-                            else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
-                                pass
-
-                # now we do the same for the last item, but wrap around to the first item when doing getting the second normal vector
-                #consider one side of the boundary
-                candidates_side_one = []
-                n = (group[-2][1]-group[-1][1], -1*(group[-2][0]-group[-1][0])) # normal vector gotten from the vector from last point to second to last point 
+            for i in range(len(group)-1):
+                #getting the possible boundary points on one side of the boundary
+                candidates_side_one = [] #contains two points on one side of the boundary curve
+                #getting the point from the normal vector between point at i-1 and point at i
+                n = (group[i-1][1]-group[i][1], -1*(group[i-1][0]-group[i][0])) # if i=0, then this will reach back around to the point at the end of the list, meaning group[i-1] will be group[-1] (Note: it's very important that the -1* component is different when looking back to when looking forward)
                 n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
                 n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                candidates_side_one.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+                candidates_side_one.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) #TODO: consider making a function that calculates and returns point based on two inputted points and an offset?
 
-                n = (-1*(group[0][1]-group[-1][1]), group[0][0]-group[-1][0]) # normal vector gotten from the vector from the last point in the list to the first 
+                #getting point from normal vector between point at i and point at i+1
+                n = (-1*(group[i+1][1]-group[i][1]), group[i+1][0]-group[i][0]) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
                 n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
                 n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                if euclidean_distance(candidates_side_one[0], (group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
-                    candidates_side_one.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+                # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)
+                if euclidean_distance(candidates_side_one[0], (group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
+                    candidates_side_one.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
 
                 #getting the possible boundary points on the other side of the boundary
                 candidates_side_two = [] #contains two points on one side of the boundary curve
                 #getting the point from the normal vector between point at i-1 and point at i
-                n = (-1*(group[-2][1]-group[-1][1]), group[-2][0]-group[-1][0])
+                n = (-1*(group[i-1][1]-group[i][1]), group[i-1][0]-group[i][0]) # if i=0, then this will reach back around to the point at the end of the list, meaning group[i-1] will be group[-1] (Note: it's very important that the -1* component is different when looking back to when looking forward)
                 n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
                 n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                candidates_side_two.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+                candidates_side_two.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
 
                 #getting point from normal vector between point at i and point at i+1
-                n = (group[0][1]-group[-1][1], -1*(group[0][0]-group[-1][0])) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
+                n = (group[i+1][1]-group[i][1], -1*(group[i+1][0]-group[i][0])) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
                 n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
                 n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
                 # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)
-                if euclidean_distance(candidates_side_two[0], (group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
-                    candidates_side_two.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+                if euclidean_distance(candidates_side_two[0], (group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
+                    candidates_side_two.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
 
                 # deciding which candidate side we should use
                 use_side_one = True
@@ -390,7 +350,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                     # checking if either of the points in candidate_side_one fall inside the shape
                     if polygon.contains(s.Point(candidate)): # if the candidate point falls inside the shape, we use side two
                         use_side_one = False
-                       
+                
                 if use_side_one: #we use side one
                     for candidate in candidates_side_one:
                         offset_group.append(candidate)
@@ -401,17 +361,75 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                         else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
                             pass
 
-                offset_boundary_points.append(offset_group)
+            # now we do the same for the last item, but wrap around to the first item when doing getting the second normal vector
+            #consider one side of the boundary
+            candidates_side_one = []
+            n = (group[-2][1]-group[-1][1], -1*(group[-2][0]-group[-1][0])) # normal vector gotten from the vector from last point to second to last point 
+            n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+            n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+            candidates_side_one.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
 
-    
-        # writing the offset boundary points to the obj file    
-        out.write("\n# Defining offset boundary points for each group")
+            n = (-1*(group[0][1]-group[-1][1]), group[0][0]-group[-1][0]) # normal vector gotten from the vector from the last point in the list to the first 
+            n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+            n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+            if euclidean_distance(candidates_side_one[0], (group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
+                candidates_side_one.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+
+            #getting the possible boundary points on the other side of the boundary
+            candidates_side_two = [] #contains two points on one side of the boundary curve
+            #getting the point from the normal vector between point at i-1 and point at i
+            n = (-1*(group[-2][1]-group[-1][1]), group[-2][0]-group[-1][0])
+            n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+            n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+            candidates_side_two.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+
+            #getting point from normal vector between point at i and point at i+1
+            n = (group[0][1]-group[-1][1], -1*(group[0][0]-group[-1][0])) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
+            n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+            n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+            # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)
+            if euclidean_distance(candidates_side_two[0], (group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
+                candidates_side_two.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+
+            # deciding which candidate side we should use
+            use_side_one = True
+            for candidate in candidates_side_one:
+                # checking if either of the points in candidate_side_one fall inside the shape
+                if polygon.contains(s.Point(candidate)): # if the candidate point falls inside the shape, we use side two
+                    use_side_one = False
+                    
+            if use_side_one: #we use side one
+                for candidate in candidates_side_one:
+                    offset_group.append(candidate)
+            else: #we use side two
+                for candidate in candidates_side_two:
+                    if not polygon.contains(s.Point(candidate)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision)
+                        offset_group.append(candidate)
+                    else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
+                        pass
+
+            offset_boundary_points.append(offset_group)
+
+        # relocating outlier points on the offset boundary
+        relocate_points(offset_boundary_points)
+
+        # writing the offset boundary points to the obj file
+        group_index = 0    
         for group in offset_boundary_points:
-            out.write("\n")
+            #defining the vertices on the offset boundary in the obj file
+            out.write(f"\n\n# Defining offset boundary points for group: {groupID_array[reduced_boundaries[group_index][0][1]][reduced_boundaries[group_index][0][0]]}")
             for offset_point in group:
                 out.write(f"\nv {offset_point[0]} {offset_point[1]} {-1*extrusion}")
                 obj_vertex_numbers[(offset_point[0], offset_point[1], -1*extrusion)] = vertex_index
                 vertex_index += 1
+            #making a face using these vertices
+            face = "\n#making a face with those vertices\nf"
+            for offset_point in group:
+                face += f" {obj_vertex_numbers[(offset_point[0],offset_point[1],-1*extrusion)]}"
+            out.write(face)
+
+            group_index +=1
+            
 
 def save_progression_images():
 
