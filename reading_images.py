@@ -248,6 +248,7 @@ extrusion = 0 #how much extrusion the mesh should be given in the z direction
 open_backed = False
 create_offset_socket = True
 offset_scalar = 1
+offset_point_distance_proportion = 0.25
 
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
@@ -298,25 +299,39 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
     if create_offset_socket and offset_scalar != 0:
         offset_boundary_points = []
         for group in reduced_boundaries:
-            if (len(group)>1):  # if there is just one point in a group, we'll get errors
+            if (len(group)>2):  # if there is just two point in a group, we'll get errors; if 2, we'll get shit mesh 
 
                 offset_group = []
 
                 for i in range(len(group)-1):
+                    #getting the point from the normal vector between point at i-1 and point at i
+                    n = (group[i-1][1]-group[i][1], -1*(group[i-1][0]-group[i][0])) # if i=0, then this will reach back around to the point at the end of the list, meaning group[i-1] will be group[-1] (Note: it's very important that the -1* component is different when looking back to when looking forward)
+                    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+                    n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+                    offset_group.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
+
                     #getting point from normal vector between point at i and point at i+1
                     n = (-1*(group[i+1][1]-group[i][1]), group[i+1][0]-group[i][0]) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
                     n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
                     n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
-                    offset_group.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
+                    # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)
+                    if euclidean_distance(offset_group[-1], (group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1])) > offset_point_distance_proportion*offset_scalar:
+                        offset_group.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
                 
-                # now we do the same between the last and the first item 
-                n = (-1*(group[0][1]-group[-1][1]), group[0][0]-group[-1][0]) # normal vector gotten from the vector between the last point in the list and the first 
+                # now we do the same for the last item, but wrap around to the first item when doing getting the second normal vector
+                n = (group[-2][1]-group[-1][1], -1*(group[-2][0]-group[-1][0])) # normal vector gotten from the vector from last point to second to last point 
+                n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+                n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+                offset_group.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+
+                n = (-1*(group[0][1]-group[-1][1]), group[0][0]-group[-1][0]) # normal vector gotten from the vector from the last point in the list to the first 
                 n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
                 n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
                 offset_group.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
 
                 offset_boundary_points.append(offset_group)
 
+    
         # writing the offset boundary points to the obj file    
         out.write("\n# Defining offset boundary points for each group")
         for group in offset_boundary_points:
