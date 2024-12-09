@@ -244,8 +244,10 @@ reduced_boundaries = reduced_boundaries_removed_duplicates
 print("writing to an .obj file...")
 
 # exporting the point data to a mesh
-extrusion = 2 #how much extrusion the mesh should be given in the z direction
+extrusion = 0 #how much extrusion the mesh should be given in the z direction
 open_backed = False
+create_offset_socket = True
+offset_scalar = 1
 
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
@@ -290,9 +292,39 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 for point in group:
                     face += f" {obj_vertex_numbers[(point[0],point[1], extrusion)]}"
                 face += f" {obj_vertex_numbers[(group[0][0],group[0][1], extrusion)]}"
-                out.write(f"# Back face for group: {groupID_array[group[0][1]][group[0][0]]}\n")
+                out.write(f"\n# Back face for group: {groupID_array[group[0][1]][group[0][0]]}\n")
                 out.write(face)
+    
+    if create_offset_socket and offset_scalar != 0:
+        offset_boundary_points = []
+        for group in reduced_boundaries:
+            if (len(group)>1):  # if there is just one point in a group, we'll get errors
 
+                offset_group = []
+
+                for i in range(len(group)-1):
+                    #getting point from normal vector between point at i and point at i+1
+                    n = (-1*(group[i+1][1]-group[i][1]), group[i+1][0]-group[i][0]) #get normal vector by flipping x & y components of the vector between the point at i and the point at i+1 and negating one of those componenets, which component you negate changes which normal vector is used
+                    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+                    n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+                    offset_group.append((group[i][0]+offset_scalar*n_unit[0], group[i][1]+offset_scalar*n_unit[1]))
+                
+                # now we do the same between the last and the first item 
+                n = (-1*(group[0][1]-group[-1][1]), group[0][0]-group[-1][0]) # normal vector gotten from the vector between the last point in the list and the first 
+                n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+                n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+                offset_group.append((group[-1][0]+offset_scalar*n_unit[0], group[-1][1]+offset_scalar*n_unit[1]))
+
+                offset_boundary_points.append(offset_group)
+
+        # writing the offset boundary points to the obj file    
+        out.write("\n# Defining offset boundary points for each group")
+        for group in offset_boundary_points:
+            out.write("\n")
+            for offset_point in group:
+                out.write(f"\nv {offset_point[0]} {offset_point[1]} {-1*extrusion}")
+                obj_vertex_numbers[(offset_point[0], offset_point[1], -1*extrusion)] = vertex_index
+                vertex_index += 1
 
 def save_progression_images():
 
