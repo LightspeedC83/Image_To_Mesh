@@ -43,3 +43,8 @@ If you want to give the borders of your shape thickness (eg. you're making a coo
 - Note: We use the Shapely.geometry library to determine which normals point inside and which point outside the shape by getting the 4 normal points and checking to see if they are contained by the polygon the original boundary points create
 We call the 'relocate_points()' function on the offset boundary points list to identify and relocate any points that aren't in the right order on the border.
 - Note: Depending on the shape you're trying to render, the offset_point_distance_proportion, if set too low, may result in you getting some vertex pairs that are out of order in the boundary list. This is the out of order point relocation algorithm (stored in the function 'relocate_points()') only reorders points whose distance to its neighbors is over the average distance and if the points are out of order and too close together (which would result from the offset_point_distance_proportion being too low), they won't get flagged and subsequently their order won't be fixed.
+
+Once we have all the offset points making an expanded boundary in the correct order, we can easily make a face with them and extrude them to give the mesh depth, creating a recepticle
+
+## The problem
+So far all we've been working with are solid groups, where each shape in the image is solid. However, if you have negative space inside one of your shapes (ie. white pixels surrounded entirely by black pixels, for example a donut shape), we quickly run into a problem with the appraoch we've been using. The first problem is that we lose all of the inner boundary points when doing the flood fill to get the boundary pixels in order because there is no way to reach them from wherever we start. 
