@@ -3,9 +3,10 @@ from PIL import Image
 from collections import deque
 import math
 import shapely.geometry as s
+import anytree
 
 #opening the reference image
-reference_name = "circle_test_small"
+reference_name = "complex_test_small"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -182,7 +183,7 @@ reference_image.save(f"images\{reference_name}_testing_border_sort.png")
 
 
 print("reducing the boundaries...")
-reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduction_factor = 0.5 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
     reduced_group = []
@@ -240,9 +241,9 @@ def relocate_points(boundary_points_input):
         avg_distance = sum/divisor
         
         for i in range(len(group)-1):
-            
+            #commenting out the check for if it's over average distance and doing relocation on every point
             # if euclidean_distance(group[i],group[i+1]) > avg_distance: #if the distance between this point and the next is higher than the benchmark (which at this point is just the avg distance between points for this group)
-            #this means that the point at index i+1 is potentially out of place
+            # # this means that the point at index i+1 is potentially out of place
             best_index = i+1 #start best_index at the index its currently at
             best_left_distance = euclidean_distance(group[i],group[i+1]) #start with current left distance
             try:
@@ -279,14 +280,77 @@ for group in reduced_boundaries:
 reduced_boundaries = reduced_boundaries_removed_duplicates
 
 
+# Now we need to determine whether or not any of the groups are inside any other groups, any group inside of another gets put in a hierarchical structure, where it's subordinate to the group it's inside
+class Boundary:
+    """keeps track of boundary points and the polygon object created by those points"""
+    def __init__(self, points, id):
+        self.points = points
+        self.polygon = s.Polygon(points)
+        self.id = id
+
+group_trees = []
+id = 0
+for group in reduced_boundaries:
+    group_trees.append(anytree.Node(f"boundary {id}", boundary=Boundary(group, id)))
+    id+=1
+
+# going through the boudary objects (all starting in tree roots) and if a boundary has a point inside another boundary, we subordinate that point to it in the tree structure
+ids_subordinated = []
+for i in range(len(group_trees)):
+    curr = group_trees[i]
+    for j in range(len(group_trees)):
+        if i != j and group_trees[j].boundary.polygon.contains(s.Point(curr.boundary.points[0])):  #if the current node we're looking at is contained inside another's boundary
+            #we need to insert at the lowest possible point in the hierarchy
+            if len(group_trees[j].children) > 0: # if the node we are going to insert at has children
+                queue = deque()
+                for x in group_trees[j].children: #putting the node and the depth from the starting node to be stored in the queue
+                    queue.append((x,1))
+                best = (group_trees[j], 0)
+                
+                while len(queue)!=0:
+                    upNext = queue.pop()
+                    child = upNext[0]
+                    #check to see if the current boundary is inside the child's polygon
+                    if child.boundary.polygon.contains(s.Point(curr.boundary.points[0])) and upNext[1] > best[1]: # if the child contains curr and it's depth in the tree is greater than the current best depth
+                        best = upNext
+
+                    for candidate in child.children:
+                        queue.append((candidate, upNext[1]))
+
+                # now that we've found the node that contains curr that's deepest in the tree
+                curr.parent = best[0]
+                if len(best[0].children) > 0: # if the new parent of curr has children, we make curr their parent, if they fit inside curr
+                    for child in best[0].children:
+                        if curr.boundary.polygon.contains(s.Point(best[0].boundary.points[0])):
+                            child.parent = curr
+                
+
+            else: # if the node we want to insert at doesn't have children we just make curr it's child and move on with our life
+                curr.parent = group_trees[j]
+            ids_subordinated.append(curr.boundary.id)
+
+
+# removing from the main list any boundary groups that were subordinated to another group, we only want to hold root nodes in this list
+for tree in group_trees:
+    if tree.boundary.id in ids_subordinated:
+        group_trees = [x for x in group_trees if x!=tree]
+
+for t in group_trees:
+    print(anytree.RenderTree(t))
+
+
+
+
+
+
 print("writing to an .obj file...")
 
 # exporting the point data to a mesh
-extrusion = 2 #how much extrusion the mesh should be given in the z direction
+extrusion = 5 #how much extrusion the mesh should be given in the z direction
 open_backed = False
 create_offset_socket = False
 offset_scalar = 2
-offset_point_distance_proportion = 0.5
+offset_point_distance_proportion = 0.35
 
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output.obj", "w") as out:

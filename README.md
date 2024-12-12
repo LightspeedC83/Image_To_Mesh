@@ -48,3 +48,8 @@ Once we have all the offset points making an expanded boundary in the correct or
 
 ## The problem
 So far all we've been working with are solid groups, where each shape in the image is solid. However, if you have negative space inside one of your shapes (ie. white pixels surrounded entirely by black pixels, for example a donut shape), we quickly run into a problem with the appraoch we've been using. The first problem is that we lose all of the inner boundary points when doing the flood fill to get the boundary pixels in order because there is no way to reach them from wherever we start. 
+
+## TODO:
+- find a better out-of-place point identification and relocation algorithm 
+    - maybe add a layer that, on top of checking for distance, draws a lines between the points around the current point in the list (in the way that the current setup would draw that part of the shape) and see if any of those lines intersect
+
