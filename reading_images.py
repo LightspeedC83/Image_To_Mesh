@@ -6,7 +6,7 @@ import shapely.geometry as s
 import anytree
 
 #opening the reference image
-reference_name = "complex_test_small"
+reference_name = "test"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -165,25 +165,25 @@ for group in boundary_points_by_group:
         sorted_boundary_points.append(sorted_group)
 
 
- # saving an image with all the points of the same group assigned the same random color
-output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+# # saving an image with all the points of the same group assigned the same random color
+# output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
 
-for g in sorted_boundary_points:
-    color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
-    for p in g:
-        output_pixels[p[1]][p[0]] = color
+# for g in sorted_boundary_points:
+#     color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
+#     for p in g:
+#         output_pixels[p[1]][p[0]] = color
     
-out = []
-for y in output_pixels:
-    for x in y:
-        out.append(x)
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(out)
-reference_image.save(f"images\{reference_name}_testing_border_sort.png")
+# out = []
+# for y in output_pixels:
+#     for x in y:
+#         out.append(x)
+# reference_image = Image.new(mode="RGB", size=reference_size)
+# reference_image.putdata(out)
+# reference_image.save(f"images\{reference_name}_testing_border_sort.png")
 
 
 print("reducing the boundaries...")
-reduction_factor = 0.5 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
     reduced_group = []
@@ -331,9 +331,11 @@ for i in range(len(group_trees)):
 
 
 # removing from the main list any boundary groups that were subordinated to another group, we only want to hold root nodes in this list
+group_trees_roots = []
 for tree in group_trees:
-    if tree.boundary.id in ids_subordinated:
-        group_trees = [x for x in group_trees if x!=tree]
+    if tree.parent == None: #if the node is a root node
+        group_trees_roots.append(tree)
+group_trees = group_trees_roots
 
 for t in group_trees:
     print(anytree.RenderTree(t))
@@ -355,48 +357,61 @@ offset_point_distance_proportion = 0.35
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output.obj", "w") as out:
     vertex_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
-    # creating the vertices and the n-gon faces based on the image for each group
-    for group in reduced_boundaries: 
-        group_vertices = "\n"
-        group_faces = "f"
-        
-        for point in group:
-            group_vertices += f"v {point[0]} {point[1]} 0\n" #storing this point
-            group_faces += f" {vertex_index}" #adding this vertex to this face list
-            obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index #keeping track of this vertex's index
-            vertex_index +=1 # must increment, and have tracked across groups
-
-        out.write(f"\n# group: {groupID_array[group[0][1]][group[0][0]]}")
-        out.write(group_vertices)
-        out.write(group_faces+"\n")
     
+    # creating the vertices and the n-gon faces based on the image for each group
+    for tree in group_trees:
+        if len(tree.children) == 0: 
+            group_vertices = "\n"
+            group_faces = "f"
+            
+            for point in tree.boundary.points:
+                group_vertices += f"v {point[0]} {point[1]} 0\n" #storing this point
+                group_faces += f" {vertex_index}" #adding this vertex to this face list
+                obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index #keeping track of this vertex's index
+                vertex_index +=1 # must increment, and have tracked across groups
+
+            out.write(f"\n# group: {groupID_array[tree.boundary.points[0][1]][tree.boundary.points[0][0]]}")
+            out.write(group_vertices)
+            out.write(group_faces+"\n")
+        else:
+            pass # TODO: handle for if we have subordinate boundaries...
+
+    # giving the mesh depth
     if extrusion != 0:
         # creating the vertices and faces for the extruded
-        for group in reduced_boundaries:
-            extruded_vertices = "\n"
+        for tree in group_trees:
+            if len(tree.children)==0:
+                extruded_vertices = "\n"
 
-            # saving all the vertices offset on the z-axis by the extrusion value
-            for point in group:
-                extruded_vertices += f"v {point[0]} {point[1]} {extrusion}\n"
-                obj_vertex_numbers[(point[0], point[1], extrusion)] = vertex_index
-                vertex_index +=1
+                # saving all the vertices offset on the z-axis by the extrusion value
+                group = tree.boundary.points
+                for point in group:
+                    extruded_vertices += f"v {point[0]} {point[1]} {extrusion}\n"
+                    obj_vertex_numbers[(point[0], point[1], extrusion)] = vertex_index
+                    vertex_index +=1
 
-            out.write(f"\n# Extruded vertices for group: {groupID_array[group[0][1]][group[0][0]]}")
-            out.write(extruded_vertices)
+                out.write(f"\n# Extruded vertices for group: {groupID_array[group[0][1]][group[0][0]]}")
+                out.write(extruded_vertices)
 
-            for i in range(len(group)-1):
-                out.write(f"f {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], extrusion)]}\n")
-            #have to include link between last and first points in the list
-            out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
+                for i in range(len(group)-1):
+                    out.write(f"f {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], extrusion)]}\n")
+                #have to include link between last and first points in the list
+                out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
+            else:
+                pass # TODO: handle for if we have subordinate boundaries...
 
         if not open_backed: # closes the back of the extruded part with an n-gon
-            for group in reduced_boundaries:
-                face = "f"
-                for point in group:
-                    face += f" {obj_vertex_numbers[(point[0],point[1], extrusion)]}"
-                face += f" {obj_vertex_numbers[(group[0][0],group[0][1], extrusion)]}"
-                out.write(f"\n# Back face for group: {groupID_array[group[0][1]][group[0][0]]}\n")
-                out.write(face)
+            for tree in group_trees:
+                if len(tree.children) == 0:
+                    face = "f"
+                    group = tree.boundary.points
+                    for point in group:
+                        face += f" {obj_vertex_numbers[(point[0],point[1], extrusion)]}"
+                    face += f" {obj_vertex_numbers[(group[0][0],group[0][1], extrusion)]}"
+                    out.write(f"\n# Back face for group: {groupID_array[group[0][1]][group[0][0]]}\n")
+                    out.write(face)
+                else:
+                    pass # TODO: handle for if we have subordinate boundaries...
     
     ## offset boundary (ie. expanded boundary)
 
