@@ -6,7 +6,7 @@ import shapely.geometry as s
 import anytree
 
 #opening the reference image
-reference_name = "test"
+reference_name = "complex_test_small_1"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -183,7 +183,7 @@ for group in boundary_points_by_group:
 
 
 print("reducing the boundaries...")
-reduction_factor = 0.85 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduction_factor = 0.5 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
     reduced_group = []
@@ -337,10 +337,17 @@ for tree in group_trees:
         group_trees_roots.append(tree)
 group_trees = group_trees_roots
 
-for t in group_trees:
-    print(anytree.RenderTree(t))
 
-
+# deconstructing the trees into their consitutent shapes (see README)
+for tree in group_trees:
+    if len(tree.children) == 0: # if the root node doesn't have any children, we do nothing
+        continue
+    else: #if the root has children
+        for child in tree.children:
+            if len(child.children) > 0: # if the child has children
+                for grandchild in child.children: # for each grandchildren, we make it a root node an add it to the group_trees list
+                    grandchild.parent = None
+                    group_trees.append(grandchild)
 
 
 
