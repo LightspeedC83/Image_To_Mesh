@@ -288,6 +288,13 @@ class Boundary:
         self.polygon = s.Polygon(points)
         self.id = id
 
+        self.central_point = (0,0) # the average x and y value of all the points on the boundary (because the boundary is closed, this should give us a rough idea of where in space the shape defined by the boundary is)
+        for p in points:
+            self.central_point[0] = self.central_point[0] + p[0]
+            self.central_point[1] = self.central_point[1] + p[1]
+        self.central_point[0] = self.central_point[0]/len(points)
+        self.central_point[1] = self.central_point[1]/len(points)
+
 group_trees = []
 id = 0
 for group in reduced_boundaries:
@@ -355,7 +362,7 @@ for tree in group_trees:
 print("writing to an .obj file...")
 
 # exporting the point data to a mesh
-extrusion = 5 #how much extrusion the mesh should be given in the z direction
+extrusion = 0 #how much extrusion the mesh should be given in the z direction
 open_backed = False
 create_offset_socket = False
 offset_scalar = 2
@@ -380,8 +387,26 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
             out.write(f"\n# group: {groupID_array[tree.boundary.points[0][1]][tree.boundary.points[0][0]]}")
             out.write(group_vertices)
             out.write(group_faces+"\n")
-        else:
-            pass # TODO: handle for if we have subordinate boundaries...
+        else: # if we have subordinate boundaries (ie. if the tree has children)
+            outer_boundary = tree.boundary.points
+            for child in tree.children: # for each inner boundary
+                point_one = child.boundary.points[0]
+
+                #finding the closest point on the outer boundary to point one
+                best_point = outer_boundary[0]
+                best_distance = euclidean_distance(point_one, outer_boundary[0])
+                for outer_point in outer_boundary:
+                    if euclidean_distance(point_one, outer_point) < best_distance:
+                        best_point = outer_point
+                        best_distance = euclidean_distance(point_one, outer_point)
+
+                #now we find the point on the inner boundary furthest from point_one
+                point_two = point_one
+                best_distance = 0
+                for other in child.boundary.points:
+                    if euclidean_distance(point_one, other) > best_distance:
+                        best_distance = euclidean_distance(point_one, other)
+                        point_two = other
 
     # giving the mesh depth
     if extrusion != 0:
@@ -420,6 +445,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 else:
                     pass # TODO: handle for if we have subordinate boundaries...
     
+
     ## offset boundary (ie. expanded boundary)
 
     if create_offset_socket and offset_scalar != 0:

@@ -57,4 +57,7 @@ Now we need to deconstruct these trees in a way that's helpful. Each shape we wa
 - find a better out-of-place point identification and relocation algorithm 
     - maybe add a layer that, on top of checking for distance, draws a lines between the points around the current point in the list (in the way that the current setup would draw that part of the shape) and see if any of those lines intersect
 - in reduction algorithm, account for density (ie. boundary-pixel to number-of-pixels-in-group ratio) such that the smaller boundaries don't get too destroyed
-
+- Consider rewriting reduction algorithm to use shapely library's interpolate function (also look into .simplify())
+- Use shapely is_ccw function on shapely.LinearRing objects made with boundary points to see if the points are clockwise and if not set them to be clockwise (see also .reverse() method)
+    - must first figure out how LinearRing objects work; will just using the points in the list to create them make a closed shape? --> check with .is_closed method
+- inside boundary expansion through combination of inside loops to create bigger "inside loops" even though really part of it is composed of faces that we have to make, all the way up until we get a donut shape with just one inside loop and then we can do the point, point closest on boundary, point on loop farthest form that point, point on boundary closest to that point division into two faces...
