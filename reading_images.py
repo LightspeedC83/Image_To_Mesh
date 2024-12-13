@@ -3,6 +3,8 @@ from PIL import Image
 from collections import deque
 import math
 import shapely.geometry as s
+import shapely
+from shapely.ops import triangulate
 import anytree
 
 #opening the reference image
@@ -288,12 +290,9 @@ class Boundary:
         self.polygon = s.Polygon(points)
         self.id = id
 
-        self.central_point = (0,0) # the average x and y value of all the points on the boundary (because the boundary is closed, this should give us a rough idea of where in space the shape defined by the boundary is)
-        for p in points:
-            self.central_point[0] = self.central_point[0] + p[0]
-            self.central_point[1] = self.central_point[1] + p[1]
-        self.central_point[0] = self.central_point[0]/len(points)
-        self.central_point[1] = self.central_point[1]/len(points)
+        self.central_point = self.polygon.centroid.x, self.polygon.centroid.y #geometric center of the object
+        
+        
 
 group_trees = []
 id = 0
@@ -388,26 +387,37 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
             out.write(group_vertices)
             out.write(group_faces+"\n")
         else: # if we have subordinate boundaries (ie. if the tree has children)
-            outer_boundary = tree.boundary.points
-            for child in tree.children: # for each inner boundary
-                point_one = child.boundary.points[0]
+            boundary = tree.boundary.points
+            holes = [x.boundary.points for x in tree.children]
 
-                #finding the closest point on the outer boundary to point one
-                best_point = outer_boundary[0]
-                best_distance = euclidean_distance(point_one, outer_boundary[0])
-                for outer_point in outer_boundary:
-                    if euclidean_distance(point_one, outer_point) < best_distance:
-                        best_point = outer_point
-                        best_distance = euclidean_distance(point_one, outer_point)
+            shape = s.Polygon(boundary, holes=holes)
+            triangles = triangulate(shape) #shapely.delaunay_triangles(shape).normalize()
+            
+            
+            out.write(f"\n# group: {groupID_array[tree.boundary.points[0][1]][tree.boundary.points[0][0]]}")
+            for triangle in triangles:
+                
+                not_viable = False
+                for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
+                    if triangle.covered_by(hole.boundary.polygon):
+                        not_viable = True
+                
+                #making sure that the triangle is covered by the origional polygon
+                if not tree.boundary.polygon.covers(triangle):
+                    not_viable = True
 
-                #now we find the point on the inner boundary furthest from point_one
-                point_two = point_one
-                best_distance = 0
-                for other in child.boundary.points:
-                    if euclidean_distance(point_one, other) > best_distance:
-                        best_distance = euclidean_distance(point_one, other)
-                        point_two = other
-
+                if not_viable:
+                    continue
+                
+                face = "\nf "
+                for point in triangle.exterior.coords:
+                    out.write(f"\nv {point[0]} {point[1]} 0")
+                    face = face + f" {vertex_index}"
+                    obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index
+                    vertex_index +=1
+                out.write(face)
+            
+           
     # giving the mesh depth
     if extrusion != 0:
         # creating the vertices and faces for the extruded
