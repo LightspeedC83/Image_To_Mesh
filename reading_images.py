@@ -8,7 +8,7 @@ from shapely.ops import triangulate
 import anytree
 
 #opening the reference image
-reference_name = "complex_test_small_1"
+reference_name = "circle_test_small"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -286,7 +286,7 @@ reduced_boundaries = reduced_boundaries_removed_duplicates
 class Boundary:
     """keeps track of boundary points and the polygon object created by those points"""
     def __init__(self, points, id):
-        self.points = points
+        self.points = [(float(x),float(y)) for (x,y) in points]
         self.polygon = s.Polygon(points)
         self.id = id
 
@@ -361,8 +361,8 @@ for tree in group_trees:
 print("writing to an .obj file...")
 
 # exporting the point data to a mesh
-extrusion = 0 #how much extrusion the mesh should be given in the z direction
-open_backed = False
+extrusion = 2 #how much extrusion the mesh should be given in the z direction
+open_backed = True
 create_offset_socket = False
 offset_scalar = 2
 offset_point_distance_proportion = 0.35
@@ -383,7 +383,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index #keeping track of this vertex's index
                 vertex_index +=1 # must increment, and have tracked across groups
 
-            out.write(f"\n# group: {groupID_array[tree.boundary.points[0][1]][tree.boundary.points[0][0]]}")
+            out.write(f"\n# group: {groupID_array[int(tree.boundary.points[0][1])][int(tree.boundary.points[0][0])]}")
             out.write(group_vertices)
             out.write(group_faces+"\n")
         else: # if we have subordinate boundaries (ie. if the tree has children)
@@ -393,8 +393,8 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
             shape = s.Polygon(boundary, holes=holes)
             triangles = triangulate(shape) #shapely.delaunay_triangles(shape).normalize()
             
-            
-            out.write(f"\n# group: {groupID_array[tree.boundary.points[0][1]][tree.boundary.points[0][0]]}")
+          
+            out.write(f"\n# group: {groupID_array[int(tree.boundary.points[0][1])][int(tree.boundary.points[0][0])]}")
             for triangle in triangles:
                 
                 not_viable = False
@@ -411,10 +411,14 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 
                 face = "\nf "
                 for point in triangle.exterior.coords:
-                    out.write(f"\nv {point[0]} {point[1]} 0")
-                    face = face + f" {vertex_index}"
-                    obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index
-                    vertex_index +=1
+                    if obj_vertex_numbers.get((point[0], point[1], 0)) == None: # if the point isn't already defined, we define the point and add it to the face we're making
+                        out.write(f"\nv {point[0]} {point[1]} 0")
+                        face = face + f" {vertex_index}"
+                        obj_vertex_numbers[(point[0], point[1], 0)] = vertex_index
+                        vertex_index +=1
+                    else: # if the point is already defined somewhere in the obj file we use that point's vertex index
+                        face = face + f" {obj_vertex_numbers[(point[0], point[1], 0)]}"
+                        
                 out.write(face)
             
            
@@ -422,25 +426,35 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
     if extrusion != 0:
         # creating the vertices and faces for the extruded
         for tree in group_trees:
-            if len(tree.children)==0:
-                extruded_vertices = "\n"
+            
+            # saving all the vertices offset on the z-axis by the extrusion value
+            
+            # getting a list of all the boundary groups
+            if len(tree.children) != 0:
+                groups_to_extrude = [tree.boundary.points] + [c.boundary.points for c in tree.children]
+            else:
+                groups_to_extrude = [tree.boundary.points]
 
-                # saving all the vertices offset on the z-axis by the extrusion value
-                group = tree.boundary.points
-                for point in group:
-                    extruded_vertices += f"v {point[0]} {point[1]} {extrusion}\n"
+            
+            out.write(f"\n\n# Extruded vertices for group: {groupID_array[int(tree.boundary.points[0][1])][int(tree.boundary.points[0][0])]}")
+           
+            for group in groups_to_extrude: # we extrude the adjacent points into faces for each pair of adjacent points in each boundary group
+                
+                for point in group: # making the extruded vertices and recording each index
+                    out.write(f"\nv {point[0]} {point[1]} {extrusion}")
                     obj_vertex_numbers[(point[0], point[1], extrusion)] = vertex_index
                     vertex_index +=1
+                    
+                #making faces between OG vertices and extruded vertices
+                for i in range(len(group)+1):
+                    curr = group[i%len(group)]
+                    next = group[(i+1)%len(group)]
+                    out.write(f"f {obj_vertex_numbers[(curr[0], curr[1], 0)]} {obj_vertex_numbers[(next[0], next[1], 0)]} {obj_vertex_numbers[(next[0], next[1], extrusion)]} {obj_vertex_numbers[(curr[0], curr[1], extrusion)]}\n")
+                
+                # #have to include link between last and first points in the list
+                # out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
+                out.write("\n")
 
-                out.write(f"\n# Extruded vertices for group: {groupID_array[group[0][1]][group[0][0]]}")
-                out.write(extruded_vertices)
-
-                for i in range(len(group)-1):
-                    out.write(f"f {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], extrusion)]}\n")
-                #have to include link between last and first points in the list
-                out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
-            else:
-                pass # TODO: handle for if we have subordinate boundaries...
 
         if not open_backed: # closes the back of the extruded part with an n-gon
             for tree in group_trees:
@@ -450,7 +464,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                     for point in group:
                         face += f" {obj_vertex_numbers[(point[0],point[1], extrusion)]}"
                     face += f" {obj_vertex_numbers[(group[0][0],group[0][1], extrusion)]}"
-                    out.write(f"\n# Back face for group: {groupID_array[group[0][1]][group[0][0]]}\n")
+                    out.write(f"\n# Back face for group: {groupID_array[int(group[0][1])][int(group[0][0])]}\n")
                     out.write(face)
                 else:
                     pass # TODO: handle for if we have subordinate boundaries...
