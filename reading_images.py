@@ -8,7 +8,7 @@ from shapely.ops import triangulate
 import anytree
 
 #opening the reference image
-reference_name = "test"
+reference_name = "circle_test_small"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -233,6 +233,7 @@ def relocate_points(boundary_points_input):
 
     for g in range(len(boundary_points_input)):
         group = boundary_points_input[g]
+        
         # first we find the average distance between adjacent points
         sum = euclidean_distance(group[0], group[-1])
         divisor = 1
@@ -285,7 +286,7 @@ reduced_boundaries = reduced_boundaries_removed_duplicates
 # Now we need to determine whether or not any of the groups are inside any other groups, any group inside of another gets put in a hierarchical structure, where it's subordinate to the group it's inside
 class Boundary:
     """keeps track of boundary points and the polygon object created by those points"""
-    def __init__(self, points, id):
+    def __init__(self, points, id=None):
         self.points = [(float(x),float(y)) for (x,y) in points]
         self.polygon = s.Polygon(points)
         self.id = id
@@ -297,7 +298,7 @@ class Boundary:
 group_trees = []
 id = 0
 for group in reduced_boundaries:
-    group_trees.append(anytree.Node(f"boundary {id}", boundary=Boundary(group, id)))
+    group_trees.append(anytree.Node(f"boundary_{id}", boundary=Boundary(group, id)))
     id+=1
 
 # going through the boudary objects (all starting in tree roots) and if a boundary has a point inside another boundary, we subordinate that point to it in the tree structure
@@ -485,10 +486,8 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 for i in range(len(group)+1):
                     curr = group[i%len(group)]
                     next = group[(i+1)%len(group)]
-                    out.write(f"f {obj_vertex_numbers[(curr[0], curr[1], 0)]} {obj_vertex_numbers[(next[0], next[1], 0)]} {obj_vertex_numbers[(next[0], next[1], extrusion)]} {obj_vertex_numbers[(curr[0], curr[1], extrusion)]}\n")
-                
-                # #have to include link between last and first points in the list
-                # out.write(f"f {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], extrusion)]}\n")
+                    out.write(f"f {obj_vertex_numbers[(curr[0], curr[1], 0)]} {obj_vertex_numbers[(next[0], next[1], 0)]} {obj_vertex_numbers[(next[0], next[1], extrusion)]} {obj_vertex_numbers[(curr[0], curr[1], extrusion)]}\n")                
+               
                 out.write("\n")
 
 
@@ -542,12 +541,14 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
     ## offset boundary (ie. expanded boundary)
     
     if create_offset_socket and offset_scalar != 0:
-        offset_boundary_points = []
-        for group in reduced_boundaries:
-            
-            polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape
-            offset_group = []
+        # we need to recreate the hierarchical structure of the boundary points with the offset boundary points, such that we know the offset points for each outer boundary and all of their inner boundaries 
+        offset_boundaries = []
 
+        for tree in group_trees:
+            group = tree.boundary.points
+            polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape
+
+            offset_group = []
             for i in range(1, len(group)+1): 
                 #getting the three relevant points for the normal calculations, using modulo to wrap around the list when i goes over
                 prev = group[(i-1) % len(group)]
@@ -580,40 +581,163 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                         else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
                             pass
 
-            offset_boundary_points.append(offset_group)
+            # this is the offset boundary for the outside boundary, the root node
+            offset_boundaries.append(anytree.Node(f"offset_boundary_{-1*tree.boundary.id}", boundary=Boundary(offset_group, -1*tree.boundary.id))) #I've decided that offset boundary object's ID numbers will be the negative OG boundary object's ID
 
-        # relocating outlier points on the offset boundary
-        relocate_points(offset_boundary_points)
+            # now we find the offset boundaries for the inside boundaries, the children nodes
+            if len(tree.children) !=0:
+                for child in tree.children:
+                    group = child.boundary.points
+                
+                    polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape, except this time we want them to be on the inside of the polygon made by the inner boundaries
+
+                    offset_group = []
+                    for i in range(1, len(group)+1): 
+                        #getting the three relevant points for the normal calculations, using modulo to wrap around the list when i goes over
+                        prev = group[(i-1) % len(group)]
+                        curr = group[(i) % len(group)]
+                        next = group[(i+1) % len(group)]
+                        
+                        #getting the possible boundary points on both sides of the boundary
+                        candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar) 
+                        
+                        # only use one point from a side if the two points aren't too close together (determined by offset_point_distance_proportion and offset_scalar)
+                        if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) > offset_point_distance_proportion*offset_scalar:
+                            candidates_side_one = [candidates_side_one[0]]
+                        if euclidean_distance(candidates_side_two[0], candidates_side_two[1]) > offset_point_distance_proportion*offset_scalar:
+                            candidates_side_two = [candidates_side_two[0]]
+                    
+                        # deciding which candidate side we should use
+                        use_side_one = True
+                        for candidate in candidates_side_one:
+                            # checking if either of the points in candidate_side_one fall inside the shape, this time we want them to fall inside the shape
+                            if not polygon.contains(s.Point(candidate)): # if the candidate point falls inside the shape, we want to use it
+                                use_side_one = False
+                        
+                        if use_side_one: #we use side one
+                            for candidate in candidates_side_one[::-1]: # we need to traverse these backwards because we want points on the inside to be in order (they come from the calculation function in order to be used on the outside of the boundary, not inside)
+                                offset_group.append(candidate)
+                        else: #we use side two
+                            for candidate in candidates_side_two[::-1]: # we need to traverse these backwards because we want points on the inside to be in order (they come from the calculation function in order to be used on the outside of the boundary, not inside)
+                                if polygon.contains(s.Point(candidate)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision), this time we want collisions, so we don't append if there isn't a collision (ie. point falls outside of the inner boundary --> ie. inside of the shape we want to create)
+                                    offset_group.append(candidate)
+                                else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
+                                    pass
+
+                    anytree.Node(f"offset_boundary_{-1*child.boundary.id}", boundary=Boundary(offset_group, -1*child.boundary.id), parent=offset_boundaries[-1]) #set parent to the root node, we just made and added to the list
+
+
+        # relocating outlier points on the offset boundaries, both outer and inner
+        for tree in offset_boundaries:
+            relocate_points([tree.boundary.points])
+            if len(tree.children) != 0:
+                for child in tree.children:
+                    relocate_points([child.boundary.points])
+
 
         # writing the offset boundary points to the obj file
         group_index = 0    
-        for group in offset_boundary_points:
-            #defining the vertices on the offset boundary in the obj file
+        for tree in offset_boundaries:
+            #defining the outer vertices on the offset boundary in the obj file
             out.write(f"\n\n# Defining offset boundary points for group: {groupID_array[reduced_boundaries[group_index][0][1]][reduced_boundaries[group_index][0][0]]}")
-            for offset_point in group:
+            for offset_point in tree.boundary.points:
+                out.write(f"\nv {offset_point[0]} {offset_point[1]} {0}")
+                obj_vertex_numbers[(offset_point[0], offset_point[1], 0)] = vertex_index
+                vertex_index += 1
+
                 out.write(f"\nv {offset_point[0]} {offset_point[1]} {-1*extrusion}")
                 obj_vertex_numbers[(offset_point[0], offset_point[1], -1*extrusion)] = vertex_index
                 vertex_index += 1
 
-                out.write(f"\nv {offset_point[0]} {offset_point[1]} 0")
-                obj_vertex_numbers[(offset_point[0], offset_point[1], 0)] = vertex_index
-                vertex_index += 1
-            
+            #defining inner vertices on the offset inner boundary in the obj file
+            if len(tree.children) != 0:
+                out.write(f"\n\n# Defining inner offset boundary points for the same group")
+                for child in tree.children:
+                    for offset_point in child.boundary.points:
+                        out.write(f"\nv {offset_point[0]} {offset_point[1]} {0}")
+                        obj_vertex_numbers[(offset_point[0], offset_point[1], 0)] = vertex_index
+                        vertex_index += 1
+
+                        out.write(f"\nv {offset_point[0]} {offset_point[1]} {-1*extrusion}")
+                        obj_vertex_numbers[(offset_point[0], offset_point[1], -1*extrusion)] = vertex_index
+                        vertex_index += 1
+
+
             #making connecting faces between the offset boundary points and the extruded points
-            out.write("\n#defining connecting faces")
-            for i in range(len(group)-1):
-                out.write(f"\nf {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], -1*extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], -1*extrusion)]}\n")
-            #do last vertex
-            out.write(f"\nf {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], -1*extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], -1*extrusion)]}\n")
+            if len(tree.children) == 0:  # if there are no inner boundaries
+                out.write("\n#defining connecting faces for offset vertices extrusion")
+                group = tree.boundary.points
+                for i in range(len(group)-1):
+                    out.write(f"\nf {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], -1*extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], -1*extrusion)]}\n")
+                #do last vertex
+                out.write(f"\nf {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], -1*extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], -1*extrusion)]}\n")
+                        
+
+                #making a back face with the extruded offset boundary points
+                face = "\n#making a back face for the offset\nf"
+                for offset_point in group:
+                    face += f" {obj_vertex_numbers[(offset_point[0],offset_point[1],-1*extrusion)]}"
+                out.write(face)
+
+                group_index +=1
+
+            else: # if we have subordinate boundaries (ie. if the tree has children)
+                ## making the extrusion vertices
+             
+                # getting a list of all the boundary groups
+                
+                groups_to_extrude = [tree.boundary.points] + [c.boundary.points for c in tree.children]
+
+                out.write(f"\n# Extruded vertices for this group")
+            
+                for group in groups_to_extrude: # we extrude the adjacent points into faces for each pair of adjacent points in each boundary group
                     
+                    for point in group: # making the extruded vertices and recording each index
+                        out.write(f"\nv {point[0]} {point[1]} {-1*extrusion}")
+                        obj_vertex_numbers[(point[0], point[1], -1*extrusion)] = vertex_index
+                        vertex_index +=1
+                        
+                    #making faces between OG vertices and extruded vertices
+                    for i in range(len(group)+1):
+                        curr = group[i%len(group)]
+                        next = group[(i+1)%len(group)]
+                        out.write(f"f {obj_vertex_numbers[(curr[0], curr[1], 0)]} {obj_vertex_numbers[(next[0], next[1], 0)]} {obj_vertex_numbers[(next[0], next[1], -1*extrusion)]} {obj_vertex_numbers[(curr[0], curr[1], -1*extrusion)]}\n")                
+                
+                   
+                ## making the back face
+                boundary = tree.boundary.points
+                holes = [x.boundary.points for x in tree.children]
 
-            #making a back face with the extruded offset boundary points
-            face = "\n#making a back face for the offset\nf"
-            for offset_point in group:
-                face += f" {obj_vertex_numbers[(offset_point[0],offset_point[1],-1*extrusion)]}"
-            out.write(face)
+                shape = s.Polygon(boundary, holes=holes)
+                triangles = triangulate(shape) #shapely.delaunay_triangles(shape).normalize()
+                
+            
+                out.write("\n# making back faces for offset points")
+                for triangle in triangles:
+                    
+                    not_viable = False
+                    for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
+                        if triangle.covered_by(hole.boundary.polygon):
+                            not_viable = True
+                    
+                    #making sure that the triangle is covered by the origional polygon
+                    if not tree.boundary.polygon.covers(triangle):
+                        not_viable = True
 
-            group_index +=1
+                    if not_viable:
+                        continue
+                    
+                    face = "\nf "
+                    for point in triangle.exterior.coords:
+                        if obj_vertex_numbers.get((point[0], point[1], -1*extrusion)) == None: # if the point isn't already defined, we define the point and add it to the face we're making
+                            out.write(f"\nv {point[0]} {point[1]} 0")
+                            face = face + f" {vertex_index}"
+                            obj_vertex_numbers[(point[0], point[1], -1*extrusion)] = vertex_index
+                            vertex_index +=1
+                        else: # if the point is already defined somewhere in the obj file we use that point's vertex index
+                            face = face + f" {obj_vertex_numbers[(point[0], point[1], -1*extrusion)]}"
+                            
+                    out.write(face)
             
 
 def save_progression_images():
