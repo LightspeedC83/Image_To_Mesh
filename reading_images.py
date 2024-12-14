@@ -8,7 +8,7 @@ from shapely.ops import triangulate
 import anytree
 
 #opening the reference image
-reference_name = "circle_test_small"
+reference_name = "complex_test_small_1"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -362,7 +362,7 @@ print("writing to an .obj file...")
 
 # exporting the point data to a mesh
 extrusion = 2 #how much extrusion the mesh should be given in the z direction
-open_backed = True
+open_backed = False
 create_offset_socket = False
 offset_scalar = 2
 offset_point_distance_proportion = 0.35
@@ -467,7 +467,40 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                     out.write(f"\n# Back face for group: {groupID_array[int(group[0][1])][int(group[0][0])]}\n")
                     out.write(face)
                 else:
-                    pass # TODO: handle for if we have subordinate boundaries...
+                    boundary = tree.boundary.points
+                    holes = [x.boundary.points for x in tree.children]
+
+                    shape = s.Polygon(boundary, holes=holes)
+                    triangles = triangulate(shape) #shapely.delaunay_triangles(shape).normalize()
+                    
+                
+                    out.write(f"\n# Back faces for group: {groupID_array[int(tree.boundary.points[0][1])][int(tree.boundary.points[0][0])]}")
+                    for triangle in triangles:
+                        
+                        not_viable = False
+                        for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
+                            if triangle.covered_by(hole.boundary.polygon):
+                                not_viable = True
+                        
+                        #making sure that the triangle is covered by the origional polygon
+                        if not tree.boundary.polygon.covers(triangle):
+                            not_viable = True
+
+                        if not_viable:
+                            continue
+                        
+                        face = "\nf "
+                        for point in triangle.exterior.coords:
+                            if obj_vertex_numbers.get((point[0], point[1], extrusion)) == None: # if the point isn't already defined, we define the point and add it to the face we're making
+                                out.write(f"\nv {point[0]} {point[1]} {extrusion}")
+                                face = face + f" {vertex_index}"
+                                obj_vertex_numbers[(point[0], point[1], extrusion)] = vertex_index
+                                vertex_index +=1
+                            else: # if the point is already defined somewhere in the obj file we use that point's vertex index
+                                face = face + f" {obj_vertex_numbers[(point[0], point[1], extrusion)]}"
+                                
+                        out.write(face)
+            
     
 
     ## offset boundary (ie. expanded boundary)
