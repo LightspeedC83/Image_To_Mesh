@@ -167,23 +167,6 @@ for group in boundary_points_by_group:
         sorted_boundary_points.append(sorted_group)
 
 
-# # saving an image with all the points of the same group assigned the same random color
-# output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
-
-# for g in sorted_boundary_points:
-#     color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
-#     for p in g:
-#         output_pixels[p[1]][p[0]] = color
-    
-# out = []
-# for y in output_pixels:
-#     for x in y:
-#         out.append(x)
-# reference_image = Image.new(mode="RGB", size=reference_size)
-# reference_image.putdata(out)
-# reference_image.save(f"images\{reference_name}_testing_border_sort.png")
-
-
 print("reducing the boundaries...")
 reduction_factor = 0.5 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
@@ -224,33 +207,6 @@ def euclidean_distance(point_one, point_two):
     """calculates euclidean_distance between to points, in the form (int, int)"""   
     return math.sqrt((point_two[0]-point_one[0])**2 + (point_two[1]-point_one[1])**2)
 
-def lines_intersect(point_one, point_two, point_three, point_four):
-    """returns to the point at the intersection between the line defined by point_one and point_two and the line defined by point_three and point_four intersect"""
-    #get slopes, None if line is vertical
-    m1 = (point_two[1]-point_one[1])/(point_two[0]-point_one[0])  if point_two[0] != point_one[0] else None 
-    m2 = (point_four[1]-point_three[1])/(point_four[0]-point_three[0]) if point_four[0] != point_three[0] else None
-
-    if m1 == m2: # lines are parallel (or the same, either way there's no one point of intersection)
-        return None
-
-    if m1 == None: # if first line is vertical
-        x_int = point_one[0]
-        y_int = m2*(x_int) + (point_three[1] - point_three[0]*m2)
-    elif m2 == None: # if second line is vertical
-        x_int = point_three[0]
-        y_int = m1*(x_int) + (point_one[1] - point_one[0]*m1)
-    else:
-        #calculating y intercept points for each line equation
-        b1 = point_one[1] - point_one[0]*m1
-        b2 = point_three[1] - point_three[0]*m2
-
-        x_int = (b2-b1)/(m1-m2)
-        y_int = m1*x_int + b1
-    
-    if min(point_one[0], point_two[0]) <= x_int <= max(point_one[0], point_two[0]) and min(point_one[1], point_two[1]) <= y_int <= max(point_one[1], point_two[1]  and  min(point_three[0], point_four[0]) <= x_int <= max(point_three[0], point_four[0]) and min(point_three[1], point_four[1]) <= y_int <= max(point_three[1], point_four[1])): # if intersection point is actually on the two line segments
-        return (x_int, y_int)
-    else:
-        return None
 
 # reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go, we make a function that does this on a generic list of the same structure as reduced_boundaries as it will be useful later
 def relocate_points(boundary_points_input):
@@ -297,46 +253,6 @@ def relocate_points(boundary_points_input):
             boundary_points_input[g].insert(best_index, group[best_index])
             del boundary_points_input[g][i+2]
 
-    # # TODO: fix this shit, it's fucking shit up not helping :(
-    # ##part that fixes when points in the list create an edge that crosses itself
-    # for g in range(len(boundary_points_input)):
-    #     group = boundary_points_input[g]
-
-    #     for i in range(1, len(group)+1): 
-    #         i_prev = (i-1) % len(group)
-    #         i_curr = (i) % len(group)
-    #         i_next = (i+1) % len(group)
-    #         i_after_next = (i+1) % len(group)
-
-    #         prev = group[i_prev]
-    #         curr = group[i_curr]
-    #         next = group[i_next]
-    #         after_next = group[i_after_next]
-
-    #         intersection = lines_intersect(curr, prev, next, after_next)
-    #         if intersection != None: # if the lines between curr and prev and next and after_next intersect, then curr and next are most likely out of order
-    #             # #  deleting both curr and next and replacing with the point of intersection
-    #             # boundary_points_input[g].insert(i_curr, intersection)
-    #             # del boundary_points_input[g][i_next]
-    #             # del boundary_points_input[g][i_after_next]
-                
-                
-    #             # now we switch the order of curr and next in the list (we could also consider deleting both and replacing with the point of intersection)
-    #             good_swap = True
-    #             try:
-    #                 temp = boundary_points_input[g][::]
-    #                 temp.insert(i_curr, next)
-    #                 del temp[g][i_after_next] #the list gets shifted over after insertion of next at curr index, so deleting at the after_next index really deletes next
-
-    #                 test = s.Polygon(temp)
-    #             except:
-    #                 good_swap = False
-    #                 print("bad swap")
-
-    #             if good_swap:
-    #                 boundary_points_input[g].insert(i_curr, next)
-    #                 del boundary_points_input[g][i_after_next] #the list gets shifted over after insertion of next at curr index, so deleting at the after_next index really deletes next
-    #                 print("good swap")
 
 relocate_points(reduced_boundaries)
 
