@@ -8,7 +8,7 @@ from shapely.ops import triangulate
 import anytree
 
 #opening the reference image
-reference_name = "circle_test_small"
+reference_name = "test_large"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
@@ -224,6 +224,34 @@ def euclidean_distance(point_one, point_two):
     """calculates euclidean_distance between to points, in the form (int, int)"""   
     return math.sqrt((point_two[0]-point_one[0])**2 + (point_two[1]-point_one[1])**2)
 
+def lines_intersect(point_one, point_two, point_three, point_four):
+    """returns to the point at the intersection between the line defined by point_one and point_two and the line defined by point_three and point_four intersect"""
+    #get slopes, None if line is vertical
+    m1 = (point_two[1]-point_one[1])/(point_two[0]-point_one[0])  if point_two[0] != point_one[0] else None 
+    m2 = (point_four[1]-point_three[1])/(point_four[0]-point_three[0]) if point_four[0] != point_three[0] else None
+
+    if m1 == m2: # lines are parallel (or the same, either way there's no one point of intersection)
+        return None
+
+    if m1 == None: # if first line is vertical
+        x_int = point_one[0]
+        y_int = m2*(x_int) + (point_three[1] - point_three[0]*m2)
+    elif m2 == None: # if second line is vertical
+        x_int = point_three[0]
+        y_int = m1*(x_int) + (point_one[1] - point_one[0]*m1)
+    else:
+        #calculating y intercept points for each line equation
+        b1 = point_one[1] - point_one[0]*m1
+        b2 = point_three[1] - point_three[0]*m2
+
+        x_int = (b2-b1)/(m1-m2)
+        y_int = m1*x_int + b1
+    
+    if min(point_one[0], point_two[0]) <= x_int <= max(point_one[0], point_two[0]) and min(point_one[1], point_two[1]) <= y_int <= max(point_one[1], point_two[1]  and  min(point_three[0], point_four[0]) <= x_int <= max(point_three[0], point_four[0]) and min(point_three[1], point_four[1]) <= y_int <= max(point_three[1], point_four[1])): # if intersection point is actually on the two line segments
+        return (x_int, y_int)
+    else:
+        return None
+
 # reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go, we make a function that does this on a generic list of the same structure as reduced_boundaries as it will be useful later
 def relocate_points(boundary_points_input):
     """function that will, given an input list in the form [[(x1,y1),(x2,y2), ...], [(x3,y3),(x4,y4), ...], ...], 
@@ -231,6 +259,7 @@ def relocate_points(boundary_points_input):
     next to eachother on the boundary are next to eachother in the list. This function doesn't return anything, 
     it just modifies the list."""
 
+    ##part that reorders points in the list based on distances between other points
     for g in range(len(boundary_points_input)):
         group = boundary_points_input[g]
         
@@ -267,6 +296,47 @@ def relocate_points(boundary_points_input):
             #now we insert the point at i+1 at the best index we've just found (insert first, then remove from where it got shifted to)
             boundary_points_input[g].insert(best_index, group[best_index])
             del boundary_points_input[g][i+2]
+
+    # # TODO: fix this shit, it's fucking shit up not helping :(
+    # ##part that fixes when points in the list create an edge that crosses itself
+    # for g in range(len(boundary_points_input)):
+    #     group = boundary_points_input[g]
+
+    #     for i in range(1, len(group)+1): 
+    #         i_prev = (i-1) % len(group)
+    #         i_curr = (i) % len(group)
+    #         i_next = (i+1) % len(group)
+    #         i_after_next = (i+1) % len(group)
+
+    #         prev = group[i_prev]
+    #         curr = group[i_curr]
+    #         next = group[i_next]
+    #         after_next = group[i_after_next]
+
+    #         intersection = lines_intersect(curr, prev, next, after_next)
+    #         if intersection != None: # if the lines between curr and prev and next and after_next intersect, then curr and next are most likely out of order
+    #             # #  deleting both curr and next and replacing with the point of intersection
+    #             # boundary_points_input[g].insert(i_curr, intersection)
+    #             # del boundary_points_input[g][i_next]
+    #             # del boundary_points_input[g][i_after_next]
+                
+                
+    #             # now we switch the order of curr and next in the list (we could also consider deleting both and replacing with the point of intersection)
+    #             good_swap = True
+    #             try:
+    #                 temp = boundary_points_input[g][::]
+    #                 temp.insert(i_curr, next)
+    #                 del temp[g][i_after_next] #the list gets shifted over after insertion of next at curr index, so deleting at the after_next index really deletes next
+
+    #                 test = s.Polygon(temp)
+    #             except:
+    #                 good_swap = False
+    #                 print("bad swap")
+
+    #             if good_swap:
+    #                 boundary_points_input[g].insert(i_curr, next)
+    #                 del boundary_points_input[g][i_after_next] #the list gets shifted over after insertion of next at curr index, so deleting at the after_next index really deletes next
+    #                 print("good swap")
 
 relocate_points(reduced_boundaries)
 
@@ -361,8 +431,15 @@ for tree in group_trees:
 
 print("writing to an .obj file...")
 
+def is_concave(current_index, boundary_points):
+    """returns true if the inputted point makes a convex angle in the shape provided"""
+    boundary_adjusted = boundary_points[::]
+    del boundary_adjusted[current_index]
+    temp = s.Polygon(boundary_adjusted)
+    return temp.contains(s.Point(boundary_points[current_index]))
+    
 
-def get_normal_points(prev, curr, next, offset_scalar):
+def get_normal_points(prev, curr, next, offset_scalar, is_concave): #TODO: in the getting of normal points, switch order of yielding of points if the angle is bad
     """returns 4 possible points offset_scalar distance away from the curr point in the 2 possible directions orthogonal to the previous point and the next point respectively.
     The output is a tuple in the form: ([list of 2 points on one side of the boundary curve], [list of 2 points on the other side of the boundary curve])"""
     candidates_side_one = [] #contains two points on one side of the boundary curve
@@ -393,7 +470,13 @@ def get_normal_points(prev, curr, next, offset_scalar):
     n_unit = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
     # only add the point from this normal vector if it's not too close to the point from the previous normal vector (determined by offset_point_distance_proportion and offset_scalar)        
     candidates_side_two.append((curr[0]+offset_scalar*n_unit[0], curr[1]+offset_scalar*n_unit[1]))
+        
+    if is_concave:
+        candidates_side_one = candidates_side_one[::-1]
+    # else: #NEED THIS IF WE DON'T REVERSE TRAVERSAL OF POINTS LATER WHEN WE DEAL WITH INNER BOUNDARIES FOR THE CHILDREN
+    #     candidates_side_two = candidates_side_two[::-1]
 
+        
     return(candidates_side_one, candidates_side_two)
 
 
@@ -545,9 +628,10 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
         offset_boundaries = []
 
         for tree in group_trees:
+            out.write("\n")
             group = tree.boundary.points
             polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape
-
+            
             offset_group = []
             for i in range(1, len(group)+1): 
                 #getting the three relevant points for the normal calculations, using modulo to wrap around the list when i goes over
@@ -556,7 +640,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 next = group[(i+1) % len(group)]
                 
                 #getting the possible boundary points on both sides of the boundary
-                candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar) 
+                candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar, is_concave(((i) % len(group)), group))
                 
                 # only use one point from a side if the two points aren't too close together (determined by offset_point_distance_proportion and offset_scalar)
                 if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) > offset_point_distance_proportion*offset_scalar:
@@ -599,7 +683,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                         next = group[(i+1) % len(group)]
                         
                         #getting the possible boundary points on both sides of the boundary
-                        candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar) 
+                        candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar, is_concave(((i) % len(group)), group)) 
                         
                         # only use one point from a side if the two points aren't too close together (determined by offset_point_distance_proportion and offset_scalar)
                         if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) > offset_point_distance_proportion*offset_scalar:
@@ -639,7 +723,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
         group_index = 0    
         for tree in offset_boundaries:
             #defining the outer vertices on the offset boundary in the obj file
-            out.write(f"\n\n# Defining offset boundary points for group: {groupID_array[reduced_boundaries[group_index][0][1]][reduced_boundaries[group_index][0][0]]}")
+            out.write(f"\n\n\n# Defining offset boundary points for group: {groupID_array[reduced_boundaries[group_index][0][1]][reduced_boundaries[group_index][0][0]]}")
             for offset_point in tree.boundary.points:
                 out.write(f"\nv {offset_point[0]} {offset_point[1]} {0}")
                 obj_vertex_numbers[(offset_point[0], offset_point[1], 0)] = vertex_index
@@ -665,10 +749,10 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
 
             #making connecting faces between the offset boundary points and the extruded points
             if len(tree.children) == 0:  # if there are no inner boundaries
-                out.write("\n#defining connecting faces for offset vertices extrusion")
+                out.write("\n\n#defining connecting faces for offset vertices extrusion")
                 group = tree.boundary.points
                 for i in range(len(group)-1):
-                    out.write(f"\nf {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], -1*extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], -1*extrusion)]}\n")
+                    out.write(f"\nf {obj_vertex_numbers[(group[i][0], group[i][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], 0)]} {obj_vertex_numbers[(group[i+1][0], group[i+1][1], -1*extrusion)]} {obj_vertex_numbers[(group[i][0], group[i][1], -1*extrusion)]}")
                 #do last vertex
                 out.write(f"\nf {obj_vertex_numbers[(group[-1][0], group[-1][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], 0)]} {obj_vertex_numbers[(group[0][0], group[0][1], -1*extrusion)]} {obj_vertex_numbers[(group[-1][0], group[-1][1], -1*extrusion)]}\n")
                         
@@ -688,7 +772,7 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 
                 groups_to_extrude = [tree.boundary.points] + [c.boundary.points for c in tree.children]
 
-                out.write(f"\n# Extruded vertices for this group")
+                out.write(f"\n\n# Extruded vertices for this group")
             
                 for group in groups_to_extrude: # we extrude the adjacent points into faces for each pair of adjacent points in each boundary group
                     
@@ -717,8 +801,10 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                     
                     not_viable = False
                     for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
-                        if triangle.covered_by(hole.boundary.polygon):
+                        if triangle.covered_by(hole.boundary.polygon) or hole.boundary.polygon.contains(triangle.centroid):
                             not_viable = True
+                        
+                        
                     
                     #making sure that the triangle is covered by the origional polygon
                     if not tree.boundary.polygon.covers(triangle):
@@ -783,7 +869,7 @@ def save_progression_images():
     output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
     for g in reduced_boundaries:
         for p in g:
-            output_pixels[p[1]][p[0]] = (255,0,0)
+            output_pixels[int(p[1])][int(p[0])] = (255,0,0)
 
     output = []
     for y in output_pixels:
@@ -800,7 +886,7 @@ def save_progression_images():
     for g in reduced_boundaries:
         color = (np.random.randint(0,250),np.random.randint(0,250),np.random.randint(0,250))
         for p in g:
-            output_pixels[p[1]][p[0]] = color
+            output_pixels[int(p[1])][int(p[0])] = color
     out = []
     for y in output_pixels:
         for x in y:
