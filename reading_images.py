@@ -7,9 +7,19 @@ import shapely
 from shapely.ops import triangulate
 import anytree
 
+#setting the relevant values
+reduction_factor = 0.75
+
+extrusion = 25 #how much extrusion the mesh should be given in the z direction
+open_backed = True
+create_offset_socket = True
+offset_scalar = 20 
+offset_point_distance_proportion = 0.5
+
+
 #opening the reference image
-reference_name = "test_large"
-reference_path = f"images\{reference_name}.png"
+reference_name = "library of lana big lana roundy"
+reference_path = f"testing\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
 reference_pixels = list(reference_image.getdata())
@@ -168,7 +178,7 @@ for group in boundary_points_by_group:
 
 
 print("reducing the boundaries...")
-reduction_factor = 0.5 #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
+reduction_factor = reduction_factor #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
 for group in sorted_boundary_points:
     reduced_group = []
@@ -397,14 +407,15 @@ def get_normal_points(prev, curr, next, offset_scalar, is_concave): #TODO: in th
 
 
 # exporting the point data to a mesh
-extrusion = 2 #how much extrusion the mesh should be given in the z direction
-open_backed = False
-create_offset_socket = True
-offset_scalar = 2
-offset_point_distance_proportion = 0.35
+extrusion = extrusion #how much extrusion the mesh should be given in the z direction
+open_backed = open_backed
+create_offset_socket = create_offset_socket
+offset_scalar = offset_scalar
+offset_point_distance_proportion = offset_point_distance_proportion
 
 obj_vertex_numbers = {}
-with open(f"outputs\{reference_name}_output.obj", "w") as out:
+with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset_scalar}_offset_scalar-{extrusion}_extrusion.obj", "w") as out:
+    out.write(f"# {reference_name}_output - reduction_factor={reduction_factor}, extrusion={2}, open_backed={open_backed}, offset_scalar={offset_scalar}, offset_point_distance_proportion={0.35}")
     vertex_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
     
     # creating the vertices and the n-gon faces based on the image for each group
@@ -434,12 +445,15 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
             for triangle in triangles:
                 
                 not_viable = False
-                for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
-                    if triangle.covered_by(hole.boundary.polygon):
+                try:
+                    for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
+                        if triangle.covered_by(hole.boundary.polygon):
+                            not_viable = True
+                    
+                    #making sure that the triangle is covered by the origional polygon
+                    if not tree.boundary.polygon.covers(triangle):
                         not_viable = True
-                
-                #making sure that the triangle is covered by the origional polygon
-                if not tree.boundary.polygon.covers(triangle):
+                except:
                     not_viable = True
 
                 if not_viable:
@@ -485,6 +499,17 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 for i in range(len(group)+1):
                     curr = group[i%len(group)]
                     next = group[(i+1)%len(group)]
+
+                    #checking to ensure the points we are working with exist
+                    if obj_vertex_numbers.get((curr[0], curr[1], 0)) == None: # if the point isn't already defined, we define the point and add it to the face we're making
+                        out.write(f"\nv {curr[0]} {curr[1]} 0 #inserting vertex because it hadn't been defined for some reason???\n")
+                        obj_vertex_numbers[(curr[0], curr[1],0)] = vertex_index
+                        vertex_index +=1
+                    if obj_vertex_numbers.get((next[0], next[1], 0)) == None: # if the point isn't already defined, we define the point and add it to the face we're making
+                        out.write(f"\nv {next[0]} {next[1]} 0 #inserting vertex because it hadn't been defined for some reason???\n")
+                        obj_vertex_numbers[(next[0], next[1],0)] = vertex_index
+                        vertex_index +=1
+
                     out.write(f"f {obj_vertex_numbers[(curr[0], curr[1], 0)]} {obj_vertex_numbers[(next[0], next[1], 0)]} {obj_vertex_numbers[(next[0], next[1], extrusion)]} {obj_vertex_numbers[(curr[0], curr[1], extrusion)]}\n")                
                
                 out.write("\n")
@@ -716,14 +741,15 @@ with open(f"outputs\{reference_name}_output.obj", "w") as out:
                 for triangle in triangles:
                     
                     not_viable = False
-                    for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
-                        if triangle.covered_by(hole.boundary.polygon) or hole.boundary.polygon.contains(triangle.centroid):
+                    try:
+                        for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
+                            if triangle.covered_by(hole.boundary.polygon) or hole.boundary.polygon.contains(triangle.centroid):
+                                not_viable = True
+                            
+                        #making sure that the triangle is covered by the origional polygon
+                        if not tree.boundary.polygon.covers(triangle):
                             not_viable = True
-                        
-                        
-                    
-                    #making sure that the triangle is covered by the origional polygon
-                    if not tree.boundary.polygon.covers(triangle):
+                    except:
                         not_viable = True
 
                     if not_viable:
@@ -831,4 +857,4 @@ def save_progression_images():
     reference_image.putdata(output)
     reference_image.save(f"images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
 
-save_progression_images()
+# save_progression_images()
