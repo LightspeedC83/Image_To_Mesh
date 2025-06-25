@@ -10,7 +10,7 @@ import anytree
 #setting the relevant values
 reduction_factor = 0.75
 
-extrusion = 25 #how much extrusion the mesh should be given in the z direction
+extrusion = 25 # how much extrusion the mesh should be given in the z direction
 open_backed = True
 create_offset_socket = True
 offset_scalar = 20 
@@ -18,8 +18,8 @@ offset_point_distance_proportion = 0.5
 
 
 #opening the reference image
-reference_name = "library of lana big lana roundy"
-reference_path = f"testing\{reference_name}.png"
+reference_name = "test_1"
+reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
 reference_pixels = list(reference_image.getdata())
@@ -105,7 +105,7 @@ for y in range(reference_size[1]):
         for next_point in [[x-1, y], [x+1, y], [x, y-1], [x, y+1]]: 
             if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid                          
                 if not pixel_array[next_point[1]][next_point[0]] and groupID_array[y][x]!=None: #if the pixel at the potential neighbor position is white (remember True means black), we mark curr as a border pixel (curr also has to be part of a group)
-                    boundary_pixles[y][x] = True
+                    boundary_pixles[y][x] = True #TODO: figure out if we should have break statements after these  (we probably should)
             elif groupID_array[y][x]!=None: #if a pixel that is part of a group is on a the border of the image, it's marked as a border pixel as well
                 boundary_pixles[y][x] = True
 
@@ -116,15 +116,16 @@ for g in points_by_group:
         if boundary_pixles[p[1]][p[0]]:
             boundary.append(p)
     boundary_points_by_group.append(boundary)
-#TODO: boundary_points_by_group has way more points than it should, figure out what the fuck is happening!!!! Probably what's going to need to happen is rewriting the whole boundary (and/or group) identification program :( :( :( :( :(
+#TODO: boundary_points_by_group has duplicate points figure out why and fix from source? (currently this is fixed when we make the sorted boundary points)
+
+
 
 # Now we have the following datastrucutres to keep track information about a pixel at a location (x,y)
 #   pixel_array - 2D array pixel_array[y][x] yeilds True if there is a black pixel at (x,y), False if not
 #   groupID_array - 2D array pixel_array[y][x] yeilds yeilds the group ID of a pixel at (x,y), None if there is not black pixel there
 #   boundary_pixels - 2D array boundary_pixels[y][x] yeilds True if there (x,y) has a boundary pixel, False if not
-#   points_by_group - a python list that holds groups, each group is a list of coordinate values
-#   bounary_points_by_group - a python list that holds lists of boundary pixels for each group
-
+#   points_by_group - a python list that holds groups, each group is a list of coordinate values - points are stored in (x,y) convention
+#   bounary_points_by_group - a python list that holds lists of boundary pixels for each group - points are stored in (x,y) convention - a group is denoted by a continuous spread of black pixels (ie. if you did flood fill starting in it, no parts would be left out)
 
 
 # now what we want to do is reduce the number of pixels in each border group uniformly by a certain percentage
@@ -143,7 +144,7 @@ for group in boundary_points_by_group:
         visited_spots[p[1]][p[0]] = False
 
 
-    #create a copy of the group list with no duplicates
+    #create a copy of the group list with no duplicates (hesistant to convert it to a set because that may not preserve order)
     group_copy = []
     seen_points = {}
     for point in group:      
@@ -211,6 +212,7 @@ for g in reduced_boundaries:
     i+=1
 
 
+
 print("reloacting outliers in the boundary...")
 
 def euclidean_distance(point_one, point_two):
@@ -219,6 +221,7 @@ def euclidean_distance(point_one, point_two):
 
 
 # reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go, we make a function that does this on a generic list of the same structure as reduced_boundaries as it will be useful later
+#TODO: This function is at least o(n^2) time complex, there has to be a better way to do this, maybe look into using a quadtree (which might get us to O(n+nh) complex)
 def relocate_points(boundary_points_input):
     """function that will, given an input list in the form [[(x1,y1),(x2,y2), ...], [(x3,y3),(x4,y4), ...], ...], 
     will identify outlier points and relocate them in the list to their proper position such that points that are 
@@ -264,8 +267,9 @@ def relocate_points(boundary_points_input):
             del boundary_points_input[g][i+2]
 
 
-relocate_points(reduced_boundaries)
 
+
+# TODO: there shouldn't be any duplicates, figure out if this code bit is necessary -- (Future Chase here: this bit of code does not seem to be removing something)
 # removing any duplicate points within groups (i don't want to just convert to a set and convert back because order may or may not be preserved, why didn't i put this bit of code back when I got rid of empty groups? that's a great question, I origionally had done exactly that, but after doing the relocation of outliers step, i'd get duplicate points soooooo I'm putting this bit of code here...)
 seen_points = {}
 reduced_boundaries_removed_duplicates = []
@@ -279,9 +283,21 @@ for group in reduced_boundaries:
 reduced_boundaries = reduced_boundaries_removed_duplicates
 
 
+
+relocate_points(reduced_boundaries) # I moved the relocate points function call to after we (again) remove duplicates so that the function has to do less work
+
+
+
+
 # Now we need to determine whether or not any of the groups are inside any other groups, any group inside of another gets put in a hierarchical structure, where it's subordinate to the group it's inside
+
 class Boundary:
-    """keeps track of boundary points and the polygon object created by those points"""
+    """keeps track of boundary points and the polygon object created by those points.
+        Properties:
+            points - a list of all the points (x,y) in the boundary (where x and y are floats)
+            polygon - a shapely polygon object made from the boundary points
+            id - an identification number for this boundary"""
+    
     def __init__(self, points, id=None):
         self.points = [(float(x),float(y)) for (x,y) in points]
         self.polygon = s.Polygon(points)
@@ -293,7 +309,7 @@ class Boundary:
 
 group_trees = []
 id = 0
-for group in reduced_boundaries:
+for group in reduced_boundaries: # creates a root node for every boundary object and puts it in the group_trees list
     group_trees.append(anytree.Node(f"boundary_{id}", boundary=Boundary(group, id)))
     id+=1
 
@@ -407,11 +423,17 @@ def get_normal_points(prev, curr, next, offset_scalar, is_concave): #TODO: in th
 
 
 # exporting the point data to a mesh
-extrusion = extrusion #how much extrusion the mesh should be given in the z direction
-open_backed = open_backed
-create_offset_socket = create_offset_socket
-offset_scalar = offset_scalar
-offset_point_distance_proportion = offset_point_distance_proportion
+# At this point in the program we have the following datastructures:
+# group_trees - This is a list of anytree node objects. Each node object is named "boundary_{id}" and has a "boundary" property that points to a Boundary object with "id", "polygon" (a shapely polygon object made from the boundary points), and "points" (a list of all the points (x,y) [NB. they're floats] in the boundary) 
+#             - all nodes in the group_trees list are root nodes (ie. they don't have parents, but they could have children) there could be multiple chidlren 
+#             - the children of a node are nodes stored in a list called children (gotten by node.children which is the same as group_trees[index].children) 
+
+# quickly restating some relevant variables here 
+extrusion = extrusion # how much extrusion the mesh should be given in the z direction
+open_backed = open_backed # whether or not the meshes generated are open backed
+create_offset_socket = create_offset_socket # if an offset socket gets created
+offset_scalar = offset_scalar # the offset scalar to use (if we are doing an offset socket)
+offset_point_distance_proportion = offset_point_distance_proportion # TODO: figure out if this variable is even necessary
 
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset_scalar}_offset_scalar-{extrusion}_extrusion.obj", "w") as out:
@@ -782,7 +804,7 @@ def save_progression_images():
             
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output_pixels)
-    reference_image.save(f"images\{reference_name}_borders_marked.png")
+    reference_image.save(f"images\progression_images\{reference_name}_borders_marked.png")
 
 
     # saving an image with all the pixels of the same group assigned the same random color
@@ -804,7 +826,7 @@ def save_progression_images():
 
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output_pixels)
-    reference_image.save(f"images\{reference_name}_groups_marked.png")
+    reference_image.save(f"images\progression_images\{reference_name}_groups_marked.png")
 
 
     # saving an image of all the border pixels (now reduced) marked in red
@@ -820,7 +842,7 @@ def save_progression_images():
 
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output)
-    reference_image.save(f"images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")    
+    reference_image.save(f"images\progression_images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")    
 
 
     # saving an image of the reduced boundary points with all the points of the same group assigned the same random color
@@ -835,7 +857,7 @@ def save_progression_images():
             out.append(x)
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(out)
-    reference_image.save(f"images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
+    reference_image.save(f"images\progression_images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
 
 
     # #saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
@@ -855,6 +877,6 @@ def save_progression_images():
 
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output)
-    reference_image.save(f"images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
+    reference_image.save(f"images\progression_images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
 
 # save_progression_images()

@@ -62,6 +62,7 @@ An additional problem that arose was if you have a vertex that is concave (ie. i
 With the offset boundaries, both outer and inner, having been created, we apply a similar extrusion process to make the socket that receives the main geometry. 
 
 ## TODO:
+- modularize code into callable functions 
 - find a better out-of-place point identification and relocation algorithm 
 - in reduction algorithm, account for density (ie. boundary-pixel to number-of-pixels-in-group ratio) such that the smaller boundaries don't get too destroyed
 - Consider rewriting reduction algorithm to use shapely library's interpolate function (also look into .simplify())
