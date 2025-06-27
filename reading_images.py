@@ -13,7 +13,7 @@ reduction_factor = 0.75
 extrusion = 25 # how much extrusion the mesh should be given in the z direction
 open_backed = True
 create_offset_socket = True
-offset_scalar = 20 
+offset_scalar = 5 
 offset_point_distance_proportion = 0.5
 
 
@@ -433,7 +433,7 @@ extrusion = extrusion # how much extrusion the mesh should be given in the z dir
 open_backed = open_backed # whether or not the meshes generated are open backed
 create_offset_socket = create_offset_socket # if an offset socket gets created
 offset_scalar = offset_scalar # the offset scalar to use (if we are doing an offset socket)
-offset_point_distance_proportion = offset_point_distance_proportion # TODO: figure out if this variable is even necessary
+offset_point_distance_proportion = offset_point_distance_proportion # when multiplied against the offset_scalar, this is the threshold below which two offset points are too close together and must be merged
 
 obj_vertex_numbers = {}
 with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset_scalar}_offset_scalar-{extrusion}_extrusion.obj", "w") as out:
@@ -582,7 +582,8 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                                 
                         out.write(face)
             
-    
+     
+    ## TODO: Everything above works (functionally, but yes there could be improvements probably), the stuff below needs finishing
 
     ## offset boundary (ie. expanded boundary)
     
@@ -875,8 +876,38 @@ def save_progression_images():
     #     for x in y:
     #         output.append(x)
 
+    # reference_image = Image.new(mode="RGB", size=reference_size)
+    # reference_image.putdata(output)
+    # reference_image.save(f"images\progression_images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
+
+    # saving the offset pixels and the origional pixels of the image in different colors 
+    temp = np.zeros((reference_size[1],reference_size[0])) # mask
+    for tree in offset_boundaries:
+        for point in tree.boundary.points:
+            temp[int(point[1])][int(point[0])] = 1
+        for child in tree.children:
+            for point in child.boundary.points:
+                temp[int(point[1])][int(point[0])] = 1
+    for tree in group_trees:
+        for point in tree.boundary.points:
+            temp[int(point[1])][int(point[0])] = 2
+        for child in tree.children:
+            for point in child.boundary.points:
+                temp[int(point[1])][int(point[0])] = 2
+
+    out = []
+    for row in temp:
+        for col in row:
+            if col == 0:
+                out.append((255,255,255))
+            elif col == 1:
+                out.append((0,0,255))
+            else:
+                out.append((0,0,0))
+    
     reference_image = Image.new(mode="RGB", size=reference_size)
-    reference_image.putdata(output)
-    reference_image.save(f"images\progression_images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
+    reference_image.putdata(out)
+    reference_image.save(f"images\progression_images\{reference_name}_points_and_expanded_points_-reduction={reduction_factor}.png")
 
 # save_progression_images()
+
