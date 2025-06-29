@@ -374,7 +374,8 @@ for tree in group_trees:
 print("writing to an .obj file...")
 
 def is_concave(current_index, boundary_points):
-    """returns true if the inputted point makes a convex angle in the shape provided"""
+    """returns true if the inputted point makes a concave angle in the shape provided"""
+    # this funciton works by removing the point at the current index from the shape and making a shape with the remaining points, if the point we removed is contained in the new shape, then that point was concave
     boundary_adjusted = boundary_points[::]
     del boundary_adjusted[current_index]
     temp = s.Polygon(boundary_adjusted)
@@ -420,6 +421,13 @@ def get_normal_points(prev, curr, next, offset_scalar, is_concave): #TODO: in th
 
         
     return(candidates_side_one, candidates_side_two)
+
+
+def find_midpoint(point_1, point_2):
+    """function that returns the point in the middle of the two inputted points"""
+    x1,y1 = point_1
+    x2,y2 = point_2
+    return((x1+(x2-x1)/2, y1+(y2-y1)/2))
 
 
 # exporting the point data to a mesh
@@ -607,10 +615,10 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                 candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar, is_concave(((i) % len(group)), group))
                 
                 # only use one point from a side if the two points aren't too close together (determined by offset_point_distance_proportion and offset_scalar)
-                if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) > offset_point_distance_proportion*offset_scalar:
-                    candidates_side_one = [candidates_side_one[0]]
-                if euclidean_distance(candidates_side_two[0], candidates_side_two[1]) > offset_point_distance_proportion*offset_scalar:
-                    candidates_side_two = [candidates_side_two[0]]
+                if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) < offset_point_distance_proportion*offset_scalar:
+                    candidates_side_one = [find_midpoint(candidates_side_one[0],candidates_side_one[1])]
+                if euclidean_distance(candidates_side_two[0], candidates_side_two[1]) < offset_point_distance_proportion*offset_scalar:
+                    candidates_side_two = [find_midpoint(candidates_side_two[0], candidates_side_two[1])]
             
                 # deciding which candidate side we should use
                 use_side_one = True
@@ -650,10 +658,10 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                         candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar, is_concave(((i) % len(group)), group)) 
                         
                         # only use one point from a side if the two points aren't too close together (determined by offset_point_distance_proportion and offset_scalar)
-                        if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) > offset_point_distance_proportion*offset_scalar:
-                            candidates_side_one = [candidates_side_one[0]]
-                        if euclidean_distance(candidates_side_two[0], candidates_side_two[1]) > offset_point_distance_proportion*offset_scalar:
-                            candidates_side_two = [candidates_side_two[0]]
+                        if euclidean_distance(candidates_side_one[0], candidates_side_one[1]) < offset_point_distance_proportion*offset_scalar:
+                            candidates_side_one = [find_midpoint(candidates_side_one[0],candidates_side_one[1])]
+                        if euclidean_distance(candidates_side_two[0], candidates_side_two[1]) < offset_point_distance_proportion*offset_scalar:
+                            candidates_side_two = [find_midpoint(candidates_side_two[0], candidates_side_two[1])]
                     
                         # deciding which candidate side we should use
                         use_side_one = True
@@ -911,3 +919,31 @@ def save_progression_images():
 
 # save_progression_images()
 
+# saving the offset pixels and the origional pixels of the image in different colors 
+temp = np.zeros((reference_size[1],reference_size[0])) # mask
+for tree in offset_boundaries:
+    for point in tree.boundary.points:
+        temp[int(point[1])][int(point[0])] = 1
+    for child in tree.children:
+        for point in child.boundary.points:
+            temp[int(point[1])][int(point[0])] = 1
+for tree in group_trees:
+    for point in tree.boundary.points:
+        temp[int(point[1])][int(point[0])] = 2
+    for child in tree.children:
+        for point in child.boundary.points:
+            temp[int(point[1])][int(point[0])] = 2
+
+out = []
+for row in temp:
+    for col in row:
+        if col == 0:
+            out.append((255,255,255))
+        elif col == 1:
+            out.append((0,0,255))
+        else:
+            out.append((0,0,0))
+
+reference_image = Image.new(mode="RGB", size=reference_size)
+reference_image.putdata(out)
+reference_image.save(f"images\progression_images\{reference_name}_points_and_expanded_points_-reduction={reduction_factor}.png")
