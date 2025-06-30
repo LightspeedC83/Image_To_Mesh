@@ -14,7 +14,7 @@ extrusion = 25 # how much extrusion the mesh should be given in the z direction
 open_backed = True
 create_offset_socket = True
 offset_scalar = 5 
-offset_point_distance_proportion = 0.5
+offset_point_distance_proportion = 0.75
 
 
 #opening the reference image
@@ -430,6 +430,39 @@ def find_midpoint(point_1, point_2):
     return((x1+(x2-x1)/2, y1+(y2-y1)/2))
 
 
+
+origional_shape_points = np.zeros((reference_size[1],reference_size[0]),dtype=bool) # a 2D boolean array where a point is True if it's one of the defining boundary points of the base shape (ie. not offset, generated only from the inputted image)
+for tree in group_trees:
+    for point in tree.boundary.points:
+        origional_shape_points[int(point[1])][int(point[0])] = True
+    for child in tree.children:
+        for point in child.boundary.points:
+           origional_shape_points[int(point[1])][int(point[0])] = True
+
+def is_point_collision(point, radius):
+    """function that returns True if there is a point in the origional shape defining points within a radius of the inputted point"""
+    global origional_shape_points
+    
+    point = (int(point[0]), int(point[1]))
+    
+    visited = np.zeros((reference_size[1],reference_size[0]),dtype=bool) # visited points map: true if visited, false if not visited
+    queue = deque() # this queue will fill will all points 
+    queue.append(point) # adding first point to queue
+    visited[point[1]][point[0]] = True # marking first point as visited
+
+    while len(queue) > 0:
+        candidate = queue.popleft()
+        if origional_shape_points[candidate[1]][candidate[0]]: #if the candidate point that we got from the queue
+            return True
+        
+        # getting the next candidates to add to the queue:
+        for next_point in [[candidate[0]-1, candidate[1]], [candidate[0]+1, candidate[1]], [candidate[0], candidate[1]-1], [candidate[0], candidate[1]+1]]:
+            if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size  and euclidean_distance(next_point,point)<=radius and not visited[next_point[1]][next_point[0]]: #if location is valid and within the radius and we haven't previously considered it, we add it
+                queue.append(next_point)
+                visited[next_point[1]][next_point[0]] = True     
+
+
+
 # exporting the point data to a mesh
 # At this point in the program we have the following datastructures:
 # group_trees - This is a list of anytree node objects. Each node object is named "boundary_{id}" and has a "boundary" property that points to a Boundary object with "id", "polygon" (a shapely polygon object made from the boundary points), and "points" (a list of all the points (x,y) [NB. they're floats] in the boundary) 
@@ -629,12 +662,14 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                 
                 if use_side_one: #we use side one
                     for candidate in candidates_side_one:
-                        offset_group.append(candidate)
+                        if not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): # we only add the candidate point if it's not too close to any of the origional points (the radius of what's too close is determined by the offset_scalar*offset_point_distance_proportion, or it'll be 1.5 if that number is smaller than 1.5 --the theory with making it 1.5 is that this distance will capture all the points in the 8 adjacent neighbors because the corner neighbors will have a distance of sqrt(2)=1.41). 
+                            offset_group.append(candidate)
                 else: #we use side two
                     for candidate in candidates_side_two:
-                        if not polygon.contains(s.Point(candidate)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision)
+                        if not polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision); we also do the same radius to origional point check with these candidate points
                             offset_group.append(candidate)
                         else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
+                            print("no offset point found")
                             pass
 
             # this is the offset boundary for the outside boundary, the root node
@@ -672,10 +707,11 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                         
                         if use_side_one: #we use side one
                             for candidate in candidates_side_one[::-1]: # we need to traverse these backwards because we want points on the inside to be in order (they come from the calculation function in order to be used on the outside of the boundary, not inside)
-                                offset_group.append(candidate)
+                                if not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): # collision check so we don't add a point that's too close to existing points
+                                    offset_group.append(candidate)
                         else: #we use side two
                             for candidate in candidates_side_two[::-1]: # we need to traverse these backwards because we want points on the inside to be in order (they come from the calculation function in order to be used on the outside of the boundary, not inside)
-                                if polygon.contains(s.Point(candidate)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision), this time we want collisions, so we don't append if there isn't a collision (ie. point falls outside of the inner boundary --> ie. inside of the shape we want to create)
+                                if polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): #we also do the collision check here; also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision), this time we want collisions, so we don't append if there isn't a collision (ie. point falls outside of the inner boundary --> ie. inside of the shape we want to create)
                                     offset_group.append(candidate)
                                 else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
                                     pass
@@ -918,7 +954,7 @@ def save_progression_images():
     reference_image.save(f"images\progression_images\{reference_name}_points_and_expanded_points_-reduction={reduction_factor}.png")
 
 # save_progression_images()
-
+print("saving image")
 # saving the offset pixels and the origional pixels of the image in different colors 
 temp = np.zeros((reference_size[1],reference_size[0])) # mask
 for tree in offset_boundaries:
