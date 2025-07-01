@@ -797,6 +797,7 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                 
                    
                 ## making the back face
+                # TODO: the back face keeps messing up
                 boundary = tree.boundary.points
                 holes = [x.boundary.points for x in tree.children]
 
@@ -810,12 +811,12 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                     not_viable = False
                     try:
                         for hole in tree.children: #check that the triangle doesn't cross any holes in the shape
-                            if triangle.covered_by(hole.boundary.polygon) or hole.boundary.polygon.contains(triangle.centroid):
+                            if hole.boundary.polygon.contains(triangle.centroid):
                                 not_viable = True
                             
                         #making sure that the triangle is covered by the origional polygon
                         if not tree.boundary.polygon.covers(triangle):
-                            not_viable = True
+                            not_viable = True                       
                     except:
                         not_viable = True
 
