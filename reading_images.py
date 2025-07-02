@@ -16,12 +16,28 @@ create_offset_socket = True
 offset_scalar = 5 
 offset_point_distance_proportion = 0.75
 
+relocation_iterations = 15 # the maximum number of times that the relocate_points() function will preform the relocation algorithm -- small numbers good to use when the reference is large
+base_relocation_iterations_on_num_points = False # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
 
-#opening the reference image
+# opening the reference image
 reference_name = "test_1"
 reference_path = f"images\{reference_name}.png"
 
 reference_image = Image.open(reference_path)
+
+# now we will add white padding all around the image as a border
+borderless_pixels = list(reference_image.getdata())
+
+border_size = offset_scalar + 1
+
+new_width = reference_image.width + 2 * border_size
+new_height = reference_image.height + 2 * border_size
+bordered_image = Image.new(reference_image.mode, (new_width, new_height), (255, 255, 255))
+bordered_image.paste(reference_image, (border_size, border_size)) #paste original image onto the center of the bordered image (paste places the inputted image's top left at the (x,y) point inputted)
+
+reference_image = bordered_image
+
+# now we continue analyzing etc. with the bordered image
 reference_pixels = list(reference_image.getdata())
 reference_size = reference_image.size # getting the refence image's size in (x-pixles,y-pixels) format
 x_size = reference_size[0]
@@ -35,7 +51,7 @@ for p in reference_pixels:
     reference.append((avg,avg,avg))
 
 # take the greyscale image and make it purely black and white
-bw_threshold = 50
+bw_threshold = 150
 bw_reference = []
 for p in reference:
     if p[0] >= bw_threshold: #if the pixel has value over threshold (ie. pixel is too light), we make it white
@@ -178,6 +194,7 @@ for group in boundary_points_by_group:
         sorted_boundary_points.append(sorted_group)
 
 
+
 print("reducing the boundaries...")
 reduction_factor = reduction_factor #the percentage by which we will reduce the each group list (0.5 reduces the list be one half, 0.25 reduces it by 1/4 (ie. it become 75% of its original size))
 reduced_boundaries = []
@@ -203,10 +220,10 @@ for group in sorted_boundary_points:
     reduced_boundaries.append(reduced_group)
 
 
-# removing any empty lists (which may or may not be in here) as well as any groups that have 2 or fewer vertices (as you need 3 vertices to make a face)
+# removing any empty lists (which may or may not be in here) as well as any groups that have 3 or fewer vertices (as you need 4 vertices to make a shapely linear ring object)
 i = 0
 for g in reduced_boundaries:
-    if len(g) <= 2:
+    if len(g) <= 3:
         del reduced_boundaries[i]
         i-=1
     i+=1
@@ -222,50 +239,78 @@ def euclidean_distance(point_one, point_two):
 
 # reduced_boundaries is mostly in order, now we want to identify the points out of place and put them where they should go, we make a function that does this on a generic list of the same structure as reduced_boundaries as it will be useful later
 #TODO: This function is at least o(n^2) time complex, there has to be a better way to do this, maybe look into using a quadtree (which might get us to O(n+nh) complex)
+#TODO: THIS FUNCTION (at times) IS WRITING OVER POINTS TO MAKE DUPLICATES and seemingly removing points
 def relocate_points(boundary_points_input):
     """function that will, given an input list in the form [[(x1,y1),(x2,y2), ...], [(x3,y3),(x4,y4), ...], ...], 
     will identify outlier points and relocate them in the list to their proper position such that points that are 
     next to eachother on the boundary are next to eachother in the list. This function doesn't return anything, 
     it just modifies the list."""
-
+    global relocation_iterations, base_relocation_iterations_on_num_points
+    
     ##part that reorders points in the list based on distances between other points
     for g in range(len(boundary_points_input)):
         group = boundary_points_input[g]
-        
+
         # first we find the average distance between adjacent points
         sum = euclidean_distance(group[0], group[-1])
         divisor = 1
         for i in range(len(group)-1):
             sum += euclidean_distance(group[i], group[i+1])
             divisor += 1
-        
+
         avg_distance = sum/divisor
         
-        for i in range(len(group)-1):
-            #commenting out the check for if it's over average distance and doing relocation on every point
-            # if euclidean_distance(group[i],group[i+1]) > avg_distance: #if the distance between this point and the next is higher than the benchmark (which at this point is just the avg distance between points for this group)
-            # # this means that the point at index i+1 is potentially out of place
-            best_index = i+1 #start best_index at the index its currently at
-            best_left_distance = euclidean_distance(group[i],group[i+1]) #start with current left distance
-            try:
-                best_right_distance = euclidean_distance(group[i+1], group[i+2]) #start with current right distance
-            except IndexError: #in this case i+1 is the end of the list, and we are wrapping around
-                best_right_distance = euclidean_distance(group[i+1], group[0])
-            
-            for j in range(len(group)-1):
-                left_distance = euclidean_distance(group[i+1], group[j])
-                right_distance = euclidean_distance(group[i+1], group[j+1])
-                if left_distance < best_left_distance and right_distance < best_right_distance:
-                    best_index = j+1 #use j+1 because if we insert at best_index we want the point at i+1 to be surrounded by the points at j (on left) and j+1 (on right)
-                    best_left_distance = left_distance
-                    best_right_distance = right_distance
-            if euclidean_distance(group[i+1], group[-1]) < best_left_distance and euclidean_distance(group[i+1], group[0]) < best_right_distance: #have to do a check for the loop between the first and last elements
-                best_index = 0 
-            
-            #now we insert the point at i+1 at the best index we've just found (insert first, then remove from where it got shifted to)
-            boundary_points_input[g].insert(best_index, group[best_index])
-            del boundary_points_input[g][i+2]
 
+        num_swaps = 1 # arbitrary nonzero value
+        #setting the max number of relocation iterations
+        if base_relocation_iterations_on_num_points:
+            max_runs = len(group)
+        else:
+            max_runs = relocation_iterations
+
+        while num_swaps > 0 and max_runs > 0: # we do the relocation algorithm until it doesn't find any points to swap or has run max_runs times
+            num_swaps = 0
+            max_runs -=1
+           
+            for i in range(len(group)-1):
+                #commenting out the check for if it's over average distance and doing relocation on every point
+                # if euclidean_distance(group[i],group[i+1]) > avg_distance: #if the distance between this point and the next is higher than the benchmark (which at this point is just the avg distance between points for this group)
+                # # this means that the point at index i+1 is potentially out of place
+
+                left_index = i % len(group)
+                middle_index = (i+1) % len(group)
+                right_index = (i+2) % len(group)
+
+                best_index = middle_index #start best_index at the index its currently at (this is the best indext to insert at, remember .insert splices in your element so that it takes the index you give it, everything with greater index (indcluding what was at that old index) is shifted right)
+                best_left_distance = euclidean_distance(group[left_index],group[middle_index]) #start with current left distance
+                best_right_distance = euclidean_distance(group[middle_index], group[right_index]) #start with current right distance
+
+                #TODO: figure out if we should have AND or OR in the below condition...
+                if best_left_distance < avg_distance or best_right_distance < avg_distance: #if the current distances are less than the average distance, then we don't do any relocation. We only want to relocate if the point under consideration is above average in its distance
+                    continue
+
+                for j in range(len(group)):
+                    left_distance = euclidean_distance(group[j], group[middle_index])
+                    right_distance = euclidean_distance(group[middle_index], group[(j+1)%len(group)])
+                    if left_distance+right_distance < best_left_distance+best_right_distance and left_distance < best_left_distance and right_distance < best_right_distance: 
+                        best_index = (j+1) % len(group) #insert at j+1 because if we insert at best_index we want the point at i+1 to be surrounded by the points at j (on left) and j+1 (on right)
+                        best_left_distance = left_distance
+                        best_right_distance = right_distance
+                
+                #now we insert the point at i+1 at the best index we've just found (insert first, then remove from where it got shifted to)
+                if best_index != middle_index: # if the best index we find for the point at middle_index isn't middle_index, we move it to the best index
+                    element_to_move = group.pop(middle_index)  # Remove and store
+                    # adjust best_index if it was affected by the removal
+                    if best_index > middle_index:
+                        best_index -= 1
+                    group.insert(best_index, element_to_move)
+                    
+                    num_swaps += 1
+
+                
+
+
+relocate_points(reduced_boundaries) # I would move the relocate points function call to after we (again) remove duplicates so that the function has to do less work, except sometimes the function does create duplicate points by overwriting stuff --It doesn't seem to be a huge problem with the mesh that it creates so I'm going to kick this can down the road.
 
 
 
@@ -281,10 +326,6 @@ for group in reduced_boundaries:
             seen_points[(point[1],point[0])] = True
     reduced_boundaries_removed_duplicates.append(non_duplicates)
 reduced_boundaries = reduced_boundaries_removed_duplicates
-
-
-
-relocate_points(reduced_boundaries) # I moved the relocate points function call to after we (again) remove duplicates so that the function has to do less work
 
 
 
@@ -310,6 +351,9 @@ class Boundary:
 group_trees = []
 id = 0
 for group in reduced_boundaries: # creates a root node for every boundary object and puts it in the group_trees list
+    if len(group) < 4:
+        print(f"group thrown out: {group}")
+        continue
     group_trees.append(anytree.Node(f"boundary_{id}", boundary=Boundary(group, id)))
     id+=1
 
@@ -373,6 +417,7 @@ for tree in group_trees:
 
 print("writing to an .obj file...")
 
+
 def is_concave(current_index, boundary_points):
     """returns true if the inputted point makes a concave angle in the shape provided"""
     # this funciton works by removing the point at the current index from the shape and making a shape with the remaining points, if the point we removed is contained in the new shape, then that point was concave
@@ -381,7 +426,7 @@ def is_concave(current_index, boundary_points):
     temp = s.Polygon(boundary_adjusted)
     return temp.contains(s.Point(boundary_points[current_index]))
     
-
+#TODO: insert catch for divide by zero errors
 def get_normal_points(prev, curr, next, offset_scalar, is_concave): #TODO: in the getting of normal points, switch order of yielding of points if the angle is bad
     """returns 4 possible points offset_scalar distance away from the curr point in the 2 possible directions orthogonal to the previous point and the next point respectively.
     The output is a tuple in the form: ([list of 2 points on one side of the boundary curve], [list of 2 points on the other side of the boundary curve])"""
@@ -445,6 +490,10 @@ def is_point_collision(point, radius):
     
     point = (int(point[0]), int(point[1]))
     
+    #checking if the point inside the bounds of origional_shape_points
+    if point[0] < 0 or point[0] > reference_size[0]-1 or point[1] < 0 or point[1] > reference_size[1]-1:
+        return False
+
     visited = np.zeros((reference_size[1],reference_size[0]),dtype=bool) # visited points map: true if visited, false if not visited
     queue = deque() # this queue will fill will all points 
     queue.append(point) # adding first point to queue
@@ -629,6 +678,7 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
     ## offset boundary (ie. expanded boundary)
     
     if create_offset_socket and offset_scalar != 0:
+        print("\tcreating offset mesh")
         # we need to recreate the hierarchical structure of the boundary points with the offset boundary points, such that we know the offset points for each outer boundary and all of their inner boundaries 
         offset_boundaries = []
 
@@ -643,7 +693,7 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                 prev = group[(i-1) % len(group)]
                 curr = group[(i) % len(group)]
                 next = group[(i+1) % len(group)]
-                
+
                 #getting the possible boundary points on both sides of the boundary
                 candidates_side_one, candidates_side_two = get_normal_points(prev, curr, next, offset_scalar, is_concave(((i) % len(group)), group))
                 
@@ -669,7 +719,7 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
                         if not polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision); we also do the same radius to origional point check with these candidate points
                             offset_group.append(candidate)
                         else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
-                            print("no offset point found")
+                            # print("no offset point found")
                             pass
 
             # this is the offset boundary for the outside boundary, the root node
@@ -929,15 +979,23 @@ def save_progression_images():
     temp = np.zeros((reference_size[1],reference_size[0])) # mask
     for tree in offset_boundaries:
         for point in tree.boundary.points:
+            if point[0] < 0 or point[0] > reference_size[0]-1 or point[1] < 0 or point[1] > reference_size[1]-1:
+                continue
             temp[int(point[1])][int(point[0])] = 1
         for child in tree.children:
             for point in child.boundary.points:
+                if point[0] < 0 or point[0] > reference_size[0]-1 or point[1] < 0 or point[1] > reference_size[1]-1:
+                    continue
                 temp[int(point[1])][int(point[0])] = 1
     for tree in group_trees:
         for point in tree.boundary.points:
+            if point[0] < 0 or point[0] > reference_size[0]-1 or point[1] < 0 or point[1] > reference_size[1]-1:
+                continue
             temp[int(point[1])][int(point[0])] = 2
         for child in tree.children:
             for point in child.boundary.points:
+                if point[0] < 0 or point[0] > reference_size[0]-1 or point[1] < 0 or point[1] > reference_size[1]-1:
+                    continue
                 temp[int(point[1])][int(point[0])] = 2
 
     out = []
@@ -954,33 +1012,5 @@ def save_progression_images():
     reference_image.putdata(out)
     reference_image.save(f"images\progression_images\{reference_name}_points_and_expanded_points_-reduction={reduction_factor}.png")
 
-# save_progression_images()
-print("saving image")
-# saving the offset pixels and the origional pixels of the image in different colors 
-temp = np.zeros((reference_size[1],reference_size[0])) # mask
-for tree in offset_boundaries:
-    for point in tree.boundary.points:
-        temp[int(point[1])][int(point[0])] = 1
-    for child in tree.children:
-        for point in child.boundary.points:
-            temp[int(point[1])][int(point[0])] = 1
-for tree in group_trees:
-    for point in tree.boundary.points:
-        temp[int(point[1])][int(point[0])] = 2
-    for child in tree.children:
-        for point in child.boundary.points:
-            temp[int(point[1])][int(point[0])] = 2
-
-out = []
-for row in temp:
-    for col in row:
-        if col == 0:
-            out.append((255,255,255))
-        elif col == 1:
-            out.append((0,0,255))
-        else:
-            out.append((0,0,0))
-
-reference_image = Image.new(mode="RGB", size=reference_size)
-reference_image.putdata(out)
-reference_image.save(f"images\progression_images\{reference_name}_points_and_expanded_points_-reduction={reduction_factor}.png")
+print("saving progression images...")
+save_progression_images()
