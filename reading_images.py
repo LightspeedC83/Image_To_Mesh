@@ -6,6 +6,8 @@ import shapely.geometry as s
 import shapely
 from shapely.ops import triangulate
 import anytree
+import os
+from skimage.draw import line
 
 #setting the relevant values
 reduction_factor = 0.75
@@ -16,14 +18,16 @@ create_offset_socket = True
 offset_scalar = 5 
 offset_point_distance_proportion = 0.75
 
-relocation_iterations = 15 # the maximum number of times that the relocate_points() function will preform the relocation algorithm -- small numbers good to use when the reference is large
-base_relocation_iterations_on_num_points = False # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
+relocation_iterations = 25 # the maximum number of times that the relocate_points() function will preform the relocation algorithm -- small numbers good to use when the reference is large
+base_relocation_iterations_on_num_points = True # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
 
 # opening the reference image
-reference_name = "test_1"
-reference_path = f"images\{reference_name}.png"
+reference_name = "new_hampshire"
+reference_path = f"images/{reference_name}.png"
+print(f"preforming operations on: '{reference_name}'")
 
 reference_image = Image.open(reference_path)
+
 
 # now we will add white padding all around the image as a border
 borderless_pixels = list(reference_image.getdata())
@@ -32,7 +36,7 @@ border_size = offset_scalar + 1
 
 new_width = reference_image.width + 2 * border_size
 new_height = reference_image.height + 2 * border_size
-bordered_image = Image.new(reference_image.mode, (new_width, new_height), (255, 255, 255))
+bordered_image = Image.new("RGB", (new_width, new_height), (255, 255, 255))
 bordered_image.paste(reference_image, (border_size, border_size)) #paste original image onto the center of the bordered image (paste places the inputted image's top left at the (x,y) point inputted)
 
 reference_image = bordered_image
@@ -526,7 +530,7 @@ offset_scalar = offset_scalar # the offset scalar to use (if we are doing an off
 offset_point_distance_proportion = offset_point_distance_proportion # when multiplied against the offset_scalar, this is the threshold below which two offset points are too close together and must be merged
 
 obj_vertex_numbers = {}
-with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset_scalar}_offset_scalar-{extrusion}_extrusion.obj", "w") as out:
+with open(f"outputs/{reference_name}_output-{reduction_factor}_reduction-{offset_scalar}_offset_scalar-{extrusion}_extrusion.obj", "w") as out:
     out.write(f"# {reference_name}_output - reduction_factor={reduction_factor}, extrusion={2}, open_backed={open_backed}, offset_scalar={offset_scalar}, offset_point_distance_proportion={0.35}")
     vertex_index = 1 #vertices are tracked with absolute numbering in order of their definition (for an obj file)
     
@@ -887,6 +891,8 @@ with open(f"outputs\{reference_name}_output-{reduction_factor}_reduction-{offset
             
 
 def save_progression_images():
+    if not os.path.exists(f"images/progression_images/{reference_name}"):
+        os.makedirs(f"images/progression_images/{reference_name}")
 
     # saving an image of all the border pixels marked in red
     output_pixels = []
@@ -900,7 +906,7 @@ def save_progression_images():
             
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output_pixels)
-    reference_image.save(f"images\progression_images\{reference_name}_borders_marked.png")
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 2- borders_marked.png")
 
 
     # saving an image with all the pixels of the same group assigned the same random color
@@ -922,14 +928,14 @@ def save_progression_images():
 
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output_pixels)
-    reference_image.save(f"images\progression_images\{reference_name}_groups_marked.png")
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 1- groups_marked.png")
 
 
-    # saving an image of all the border pixels (now reduced) marked in red
+    # saving an image of all the border pixels (now reduced) marked
     output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
     for g in reduced_boundaries:
         for p in g:
-            output_pixels[int(p[1])][int(p[0])] = (255,0,0)
+            output_pixels[int(p[1])][int(p[0])] = (0,0,0)
 
     output = []
     for y in output_pixels:
@@ -938,7 +944,7 @@ def save_progression_images():
 
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(output)
-    reference_image.save(f"images\progression_images\{reference_name}_borders_reduced_by_{int(100*reduction_factor)}_percent.png")    
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 3- borders_reduced_by_{int(100*reduction_factor)}_percent.png")    
 
 
     # saving an image of the reduced boundary points with all the points of the same group assigned the same random color
@@ -953,27 +959,48 @@ def save_progression_images():
             out.append(x)
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(out)
-    reference_image.save(f"images\progression_images\{reference_name}_border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 3.a- border_groups_marked_reduced_by_{int(100*reduction_factor)}_percent.png")
+
+    
+    #saving the pixels in non-reduced boundaries, each pixel in the boundary's color is based on it's position in the list
+    output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+    for g in sorted_boundary_points:
+        color_value = 0
+        for p in g:
+            output_pixels[p[1]][p[0]] = (color_value,0,0)
+            color_value += 5
+            if color_value >= 255:
+                color_value = 0
+
+    output = []
+    for y in output_pixels:
+        for x in y:
+            output.append(x)
+
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(output)
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 2.a- boundary_marked_in_order.png")
 
 
-    # #saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
-    # output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
-    # for g in reduced_boundaries:
-    #     color_value = 0
-    #     for p in g:
-    #         output_pixels[p[1]][p[0]] = (color_value,0,0)
-    #         color_value += 5
-    #         if color_value >= 255:
-    #             color_value = 255
+    #saving the pixels in reduced boundaries, each pixel in the boundary's color is based on it's position in the list
+    output_pixels = [[(255,255,255) for x in range(x_size)] for y in range(y_size)]
+    for g in reduced_boundaries:
+        color_value = 0
+        for p in g:
+            output_pixels[p[1]][p[0]] = (color_value,0,0)
+            color_value += 5
+            if color_value >= 255:
+                color_value = 0
 
-    # output = []
-    # for y in output_pixels:
-    #     for x in y:
-    #         output.append(x)
+    output = []
+    for y in output_pixels:
+        for x in y:
+            output.append(x)
 
-    # reference_image = Image.new(mode="RGB", size=reference_size)
-    # reference_image.putdata(output)
-    # reference_image.save(f"images\progression_images\{reference_name}_marked_in_order_borders_reduced_by_{int(100*reduction_factor)}_percent.png")
+    reference_image = Image.new(mode="RGB", size=reference_size)
+    reference_image.putdata(output)
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 3.b- boundary_marked_in_order_reduced_by_{int(100*reduction_factor)}_percent.png")
+
 
     # saving the offset pixels and the origional pixels of the image in different colors 
     temp = np.zeros((reference_size[1],reference_size[0])) # mask
@@ -1010,7 +1037,99 @@ def save_progression_images():
     
     reference_image = Image.new(mode="RGB", size=reference_size)
     reference_image.putdata(out)
-    reference_image.save(f"images\progression_images\{reference_name}_points_and_expanded_points_-reduction={reduction_factor}.png")
+    reference_image.save(f"images/progression_images/{reference_name}/{reference_name} 4- points_and_expanded_points_-reduction={reduction_factor}.png")
+
+
+    # saving an image of the points and the lines between them
+    def create_mask(group, is_offset):
+        """helper function to return a 2D array of points and lines in between them the points are multiples of 13, the lines are multiples of 19, and white space is 0.
+        I'm using a somewhat weird prime number system becasue it will be easier to differentiate lines and points and white space when a bunch of these"""
+        global reference_size
+
+        if is_offset:
+            point_color = 23
+            line_color = 29
+        else:
+            point_color = 13
+            line_color = 19
+
+        point_mask = np.zeros((reference_size[1],reference_size[0]), dtype=int)
+
+        for i in range(len(group)):
+            pt1 = group[i%len(group)]
+            pt2 = group[(i+1)%len(group)]
+            pt1 = (int(pt1[0]), int(pt1[1]))
+            pt2 = (int(pt2[0]), int(pt2[1]))
+
+            rr, cc = line(pt1[1], pt1[0], pt2[1], pt2[0])  # skimage uses (row,col) = (y,x)
+            # clip indices if needed
+            # rr = np.clip(rr, 0, reference_size[1]-1)
+            # cc = np.clip(cc, 0, reference_size[0]-1)
+            # create suppression mask with line
+            point_mask[rr, cc] = line_color
+            #marking the origional points
+            point_mask[pt1[1]][pt1[0]] = point_color
+            point_mask[pt2[1]][pt2[0]] = point_color
+        return point_mask
+    
+    def decode_point(input):
+        if input==0: # if there's white space
+            return (255,255,255)
+        elif input%13 == 0: # if  there's a point
+            return (0,0,0)
+        elif input%19 == 0:# if there's a line
+            return (255,0,255)
+        elif input%23 == 0: # if there's an offset point
+            return (0,0,255)
+        elif input%29 == 0: # if there's an offset line
+            return(0,255,255)
+        else: # if there's an intersection of some sort
+            return (255,0,0)
+
+    og_point_mask = np.zeros((reference_size[1],reference_size[0]), dtype=int)
+    for tree in group_trees:
+        og_point_mask += create_mask(tree.boundary.points, False)
+        for child in tree.children:
+            og_point_mask += create_mask(child.boundary.points, False)
+
+    offset_point_mask = np.zeros((reference_size[1],reference_size[0]), dtype=int)
+    for tree in offset_boundaries:
+        offset_point_mask += create_mask(tree.boundary.points, True)
+        for child in tree.children:
+            offset_point_mask += create_mask(child.boundary.points, True)
+
+    
+    combined_point_mask = og_point_mask + offset_point_mask    
+
+    og_out = []
+    offset_out = []
+    combined_out = []
+   
+    # now handling pixels for the offset mask            
+    for og_row in og_point_mask:
+        for og_column in og_row:
+            og_out.append(decode_point(og_column))
+
+    # now handling pixels for the offset mask            
+    for offset_row in offset_point_mask:
+        for offset_column in offset_row:
+            offset_out.append(decode_point(offset_column))
+    
+    # now handling pixels for the combined mask            
+    for combined_row in combined_point_mask:
+        for combined_column in combined_row:
+            combined_out.append(decode_point(combined_column))
+
+    og_image = Image.new(mode="RGB", size=reference_size)
+    og_image.putdata(og_out)
+    offset_image = Image.new(mode="RGB", size=reference_size)
+    offset_image.putdata(offset_out)
+    combined_image = Image.new(mode="RGB", size=reference_size)
+    combined_image.putdata(combined_out)
+    og_image.save(f"images/progression_images/{reference_name}/{reference_name} 5a- og_points_with_connections-reduction={reduction_factor}.png")
+    offset_image.save(f"images/progression_images/{reference_name}/{reference_name} 5b- offset_points_with_connections-reduction={reduction_factor}.png")
+    combined_image.save(f"images/progression_images/{reference_name}/{reference_name} 5c- combined_og_and_offset_points_with_connections-reduction={reduction_factor}.png")
+
 
 print("saving progression images...")
 save_progression_images()

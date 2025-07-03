@@ -67,6 +67,7 @@ So the biggest sustaining problem with the way everything above left this projec
 
 ## TODO:
 - do better with point relocation; find a way to identify problem areas in the mesh
+    - *****if problem with the boundary pionts being out of order perisists, maybe try: reducing the sorted points by 1/2 (ie. getting rid of every other point) and then iteratively doing the neighbor-distance-based relocation algorithm (becuase there should be a distance of maximum sqrt(2) between adjacent points)****
 - find an absolute method to prevent extruded points from being too close to eachother (ie. not just finding midpoint between two candidates for an OG point): could either modify is_point_collision() function or make new function or something else 
 - modularize code into callable functions for the expanding of outer borders and inner borders because it's essentially the same process.
 
