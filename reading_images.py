@@ -19,10 +19,13 @@ offset_scalar = 5
 offset_point_distance_proportion = 0.75
 
 relocation_iterations = 25 # the maximum number of times that the relocate_points() function will preform the relocation algorithm -- small numbers good to use when the reference is large
-base_relocation_iterations_on_num_points = True # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
+base_relocation_iterations_on_num_points = False # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
+only_relocate_outliers = False # if True, preforms the relocation algorithm on only points whose neighbor distances are above the average distance; if False, it preforms the relocation operation on every point
+
+check_collisions_with_offset_points = True # When creating offset points, the candidate offset point will be discarded if there is a point on the origional mesh within certain radius of the candidate, if this is True, then the candidate will also be discarded if it's too close to another offset point. - this acts in the is_point_collision() function
 
 # opening the reference image
-reference_name = "new_hampshire"
+reference_name = "gerrymandering_test_texas"
 reference_path = f"images/{reference_name}.png"
 print(f"preforming operations on: '{reference_name}'")
 
@@ -249,7 +252,7 @@ def relocate_points(boundary_points_input):
     will identify outlier points and relocate them in the list to their proper position such that points that are 
     next to eachother on the boundary are next to eachother in the list. This function doesn't return anything, 
     it just modifies the list."""
-    global relocation_iterations, base_relocation_iterations_on_num_points
+    global relocation_iterations, base_relocation_iterations_on_num_points, only_relocate_outliers
     
     ##part that reorders points in the list based on distances between other points
     for g in range(len(boundary_points_input)):
@@ -290,7 +293,7 @@ def relocate_points(boundary_points_input):
                 best_right_distance = euclidean_distance(group[middle_index], group[right_index]) #start with current right distance
 
                 #TODO: figure out if we should have AND or OR in the below condition...
-                if best_left_distance < avg_distance or best_right_distance < avg_distance: #if the current distances are less than the average distance, then we don't do any relocation. We only want to relocate if the point under consideration is above average in its distance
+                if best_left_distance < avg_distance and best_right_distance < avg_distance and only_relocate_outliers: #if the current distances are less than the average distance, then we don't do any relocation. We only want to relocate if the point under consideration is above average in its distance
                     continue
 
                 for j in range(len(group)):
@@ -488,9 +491,11 @@ for tree in group_trees:
         for point in child.boundary.points:
            origional_shape_points[int(point[1])][int(point[0])] = True
 
-def is_point_collision(point, radius):
+offset_group_points = np.zeros((reference_size[1],reference_size[0]),dtype=bool) # a 2D boolean array where a point is True if there's an offset point there
+
+def is_point_collision(point, radius, reset_tracked_offset_points=False):
     """function that returns True if there is a point in the origional shape defining points within a radius of the inputted point"""
-    global origional_shape_points
+    global origional_shape_points, check_collisions_with_offset_points, offset_group_points
     
     point = (int(point[0]), int(point[1]))
     
@@ -507,12 +512,19 @@ def is_point_collision(point, radius):
         candidate = queue.popleft()
         if origional_shape_points[candidate[1]][candidate[0]]: #if the candidate point that we got from the queue
             return True
-        
+        if offset_group_points[candidate[1]][candidate[0]] and check_collisions_with_offset_points:
+            return True
+
         # getting the next candidates to add to the queue:
         for next_point in [[candidate[0]-1, candidate[1]], [candidate[0]+1, candidate[1]], [candidate[0], candidate[1]-1], [candidate[0], candidate[1]+1]]:
             if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size  and euclidean_distance(next_point,point)<=radius and not visited[next_point[1]][next_point[0]]: #if location is valid and within the radius and we haven't previously considered it, we add it
                 queue.append(next_point)
                 visited[next_point[1]][next_point[0]] = True     
+    
+    offset_group_points[point[1]][point[0]] = True # if we don't have a collision, then we add the point to the array keeping track of offset points (because if there's no collision, then it will get added)
+
+    if reset_tracked_offset_points:
+        offset_group_points = np.zeros((reference_size[1],reference_size[0]),dtype=bool) # resetting the offset points group; the idea is that we want to reset the offset points that we check for collisions between groups
 
 
 
@@ -692,7 +704,7 @@ with open(f"outputs/{reference_name}_output-{reduction_factor}_reduction-{offset
             polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape
             
             offset_group = []
-            for i in range(1, len(group)+1): 
+            for i in range(len(group)): 
                 #getting the three relevant points for the normal calculations, using modulo to wrap around the list when i goes over
                 prev = group[(i-1) % len(group)]
                 curr = group[(i) % len(group)]
@@ -716,11 +728,11 @@ with open(f"outputs/{reference_name}_output-{reduction_factor}_reduction-{offset
                 
                 if use_side_one: #we use side one
                     for candidate in candidates_side_one:
-                        if not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): # we only add the candidate point if it's not too close to any of the origional points (the radius of what's too close is determined by the offset_scalar*offset_point_distance_proportion, or it'll be 1.5 if that number is smaller than 1.5 --the theory with making it 1.5 is that this distance will capture all the points in the 8 adjacent neighbors because the corner neighbors will have a distance of sqrt(2)=1.41). 
+                        if not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5), reset_tracked_offset_points=(i==len(group))): # we only add the candidate point if it's not too close to any of the origional points (the radius of what's too close is determined by the offset_scalar*offset_point_distance_proportion, or it'll be 1.5 if that number is smaller than 1.5 --the theory with making it 1.5 is that this distance will capture all the points in the 8 adjacent neighbors because the corner neighbors will have a distance of sqrt(2)=1.41). (i==len(group) is the condition for resetting the group point collision tracker, which we want to reset for each group)
                             offset_group.append(candidate)
                 else: #we use side two
                     for candidate in candidates_side_two:
-                        if not polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision); we also do the same radius to origional point check with these candidate points
+                        if not polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5), reset_tracked_offset_points=(i==len(group))): #also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision); we also do the same radius to origional point check with these candidate points
                             offset_group.append(candidate)
                         else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
                             # print("no offset point found")
@@ -737,7 +749,7 @@ with open(f"outputs/{reference_name}_output-{reduction_factor}_reduction-{offset
                     polygon = s.Polygon(group) # we'll use the shapely.geometry library to figure out if a candidate offset point produces a collision with the shape, except this time we want them to be on the inside of the polygon made by the inner boundaries
 
                     offset_group = []
-                    for i in range(1, len(group)+1): 
+                    for i in range(len(group)): 
                         #getting the three relevant points for the normal calculations, using modulo to wrap around the list when i goes over
                         prev = group[(i-1) % len(group)]
                         curr = group[(i) % len(group)]
@@ -761,11 +773,11 @@ with open(f"outputs/{reference_name}_output-{reduction_factor}_reduction-{offset
                         
                         if use_side_one: #we use side one
                             for candidate in candidates_side_one[::-1]: # we need to traverse these backwards because we want points on the inside to be in order (they come from the calculation function in order to be used on the outside of the boundary, not inside)
-                                if not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): # collision check so we don't add a point that's too close to existing points
+                                if not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5), reset_tracked_offset_points=(i==len(group))): # collision check so we don't add a point that's too close to existing points
                                     offset_group.append(candidate)
                         else: #we use side two
                             for candidate in candidates_side_two[::-1]: # we need to traverse these backwards because we want points on the inside to be in order (they come from the calculation function in order to be used on the outside of the boundary, not inside)
-                                if polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5)): #we also do the collision check here; also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision), this time we want collisions, so we don't append if there isn't a collision (ie. point falls outside of the inner boundary --> ie. inside of the shape we want to create)
+                                if polygon.contains(s.Point(candidate)) and not is_point_collision(candidate, max(offset_scalar*offset_point_distance_proportion, 1.5), reset_tracked_offset_points=(i==len(group))): #we also do the collision check here; also check these points for collisions (it's possible to get all points from normal vectors at a fixed offset to result in a collision), this time we want collisions, so we don't append if there isn't a collision (ie. point falls outside of the inner boundary --> ie. inside of the shape we want to create)
                                     offset_group.append(candidate)
                                 else: #if it turns out that these points are also bad, we just won't add them --> TODO: come up with system to try to find an okay point that works
                                     pass
