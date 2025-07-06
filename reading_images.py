@@ -8,6 +8,7 @@ from shapely.ops import triangulate
 import anytree
 import os
 from skimage.draw import line
+from scipy import ndimage
 
 #setting the relevant values
 reduction_factor = 0.75
@@ -18,14 +19,15 @@ create_offset_socket = True
 offset_scalar = 5 
 offset_point_distance_proportion = 0.75
 
-relocation_iterations = 25 # the maximum number of times that the relocate_points() function will preform the relocation algorithm -- small numbers good to use when the reference is large
+relocation_iterations = 0 # the maximum number of times that the relocate_points() function will preform the relocation algorithm -- small numbers good to use when the reference is large
 base_relocation_iterations_on_num_points = False # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
-only_relocate_outliers = False # if True, preforms the relocation algorithm on only points whose neighbor distances are above the average distance; if False, it preforms the relocation operation on every point
+only_relocate_outliers = True # if True, preforms the relocation algorithm on only points whose neighbor distances are above the average distance; if False, it preforms the relocation operation on every point
 
 check_collisions_with_offset_points = True # When creating offset points, the candidate offset point will be discarded if there is a point on the origional mesh within certain radius of the candidate, if this is True, then the candidate will also be discarded if it's too close to another offset point. - this acts in the is_point_collision() function
+offset_collision_radius_divisor = 3 # When doing the collision check with offset points and a candidate point, this, is used as the divisor of the acceptable radius in the is_collision() function, as a smaller radius is usually desirable for the offset points (allowing them to be closer to eachother than the distance they can be from an og mesh point)
 
 # opening the reference image
-reference_name = "gerrymandering_test_texas"
+reference_name = "gerrymandering_test_og"
 reference_path = f"images/{reference_name}.png"
 print(f"preforming operations on: '{reference_name}'")
 
@@ -151,17 +153,43 @@ for g in points_by_group:
 #   bounary_points_by_group - a python list that holds lists of boundary pixels for each group - points are stored in (x,y) convention - a group is denoted by a continuous spread of black pixels (ie. if you did flood fill starting in it, no parts would be left out)
 
 
-# now what we want to do is reduce the number of pixels in each border group uniformly by a certain percentage
+# now what we want to do is get the points in the correct order and reduce the number of pixels in each border group uniformly by a certain percentage
 
-print("doing flood fill on boundary points...")
+dialation_element = np.array([[1, 1, 1],
+                              [1, 1, 1],
+                              [1, 1, 1]]).astype(bool)
+
+def check_space_adjacency(pt1, pt2):
+    """function to check if the white space around the inputted pt1 and pt2 border eachother outside of the image;
+    used to get all points in order"""
+    global pixel_array, boundary_pixles, reference_size, dialation_element
+
+    # making a dialation of pt1 in the image, and one of pt2; if they overlap, we know that the points share a border pixel
+    search_mask_1 = np.zeros((reference_size[1],reference_size[0]), dtype=bool)
+    search_mask_1[pt1[1]][pt1[0]] = True
+    search_mask_1 = ndimage.binary_dilation(search_mask_1, dialation_element, iterations=1)
+
+    search_mask_2 = np.zeros((reference_size[1],reference_size[0]), dtype=bool)
+    search_mask_2[pt2[1]][pt2[0]] = True
+    search_mask_2 = ndimage.binary_dilation(search_mask_2, dialation_element, iterations=1)
+
+    search_mask_1 = search_mask_1 & (~pixel_array) # removing any pixels that are inside the shape (we only want to check if empty pixels touch)
+    search_mask_2 = search_mask_2 & (~pixel_array)
+
+    return np.sum((search_mask_1 & search_mask_2).astype(int)) # return the number of overlapping adjacent white space for the two points, there should be 2 overlapping spaces for points edge-to-edge and 1 for corner-to-corner
+
+
+
+
+print("ordering boundary points...")
 # first we must rearrainge the order of the points in the boundary_points_by_group list such that points that are next to eachother in the image are next to eachother in the list
 # to do this we're basically going to be doing a flood fill algorithm on just the border points
 sorted_boundary_points = []
 for group in boundary_points_by_group:
     
     
-    visited_spots = np.array([[1 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a key of visited spots, False(0) means we haven't visited, True(1) means we have. we set all initially to true and then mark false the points in the group (this ensures that we only consider points in the group)
-    point_locations = np.array([[0 for x in range(reference_size[0])]for y in range(reference_size[1])], dtype=bool) # a 2D array of point locations, True means there is a point at said location, False means there is not
+    visited_spots = np.ones((reference_size[1],reference_size[0]), dtype=bool) # a key of visited spots, False(0) means we haven't visited, True(1) means we have. we set all initially to true and then mark false the points in the group (this ensures that we only consider points in the group)
+    point_locations = np.zeros((reference_size[1],reference_size[0]), dtype=bool) # a 2D array of point locations, True means there is a point at said location, False means there is not
     for p in group:
         point_locations[p[1]][p[0]] = True
         visited_spots[p[1]][p[0]] = False
@@ -187,16 +215,38 @@ for group in boundary_points_by_group:
             group_copy.remove(curr)
             sorted_group.append(curr) #add it to the next one
             visited_spots[curr[1]][curr[0]] = True
-            for next_point in [[curr[0]-1, curr[1]], [curr[0]+1, curr[1]], [curr[0], curr[1]-1], [curr[0], curr[1]+1]]: #looking at the locations directly adjacent first
+
+            #code below is a commented out version of the above that looks at all bordering candidates in clockwise fashion rather than with edge preference
+            for next_point in [[curr[0], curr[1]-1], [curr[0]+1, curr[1]-1], [curr[0]+1, curr[1]], [curr[0]+1, curr[1]+1], [curr[0], curr[1]+1],  [curr[0]-1, curr[1]+1], [curr[0]-1, curr[1]], [curr[0]-1, curr[1]-1]]: #looking at the locations in clockwise order starting from directly above curr
                 if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
-                    if not visited_spots[next_point[1]][next_point[0]]: #if hasn't been visited
+                    if not visited_spots[next_point[1]][next_point[0]] and check_space_adjacency(curr, next_point): #if the next point hasn't been visited and the empty (directly adjacent) border pixels border those of the current pixel 
                         queue.append(next_point)
                         visited_spots[next_point[1]][next_point[0]] = True
-            for next_point in [[curr[0]-1, curr[1]-1], [curr[0]-1, curr[1]+1], [curr[0]+1, curr[1]-1], [curr[0]+1, curr[1]+1]]: # now looking at the locations in the corners
-                if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
-                    if not visited_spots[next_point[1]][next_point[0]]: #if hasn't been visited
-                        queue.append(next_point)
-                        visited_spots[next_point[1]][next_point[0]] = True
+                        break
+
+            #code below is a commented out version of the above that looks in clockwise order with preference first given to the edges then corners
+            # for next_point in [[curr[0]-1, curr[1]], [curr[0], curr[1]-1], [curr[0]+1, curr[1]], [curr[0], curr[1]+1]]: #looking at the locations directly adjacent first
+            #     if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
+            #         if not visited_spots[next_point[1]][next_point[0]] and check_space_adjacency(curr, next_point) >=2: #if the next point hasn't been visited and the empty (directly adjacent) border pixels border those of the current pixel 
+            #             queue.append(next_point)
+            #             visited_spots[next_point[1]][next_point[0]] = True
+            # for next_point in [[curr[0]-1, curr[1]-1], [curr[0]+1, curr[1]-1], [curr[0]+1, curr[1]+1], [curr[0]-1, curr[1]+1]]: # now looking at the locations in the corners
+            #     if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
+            #         if not visited_spots[next_point[1]][next_point[0]] and check_space_adjacency(curr, next_point)==1: #if the next point hasn't been visited and the empty (directly adjacent) border pixels border those of the current pixel 
+            #             queue.append(next_point)
+            #             visited_spots[next_point[1]][next_point[0]] = True
+
+            #the origional code is below
+            # for next_point in [[curr[0]-1, curr[1]], [curr[0]+1, curr[1]], [curr[0], curr[1]-1], [curr[0], curr[1]+1]]: #looking at the locations directly adjacent first
+            #     if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
+            #         if not visited_spots[next_point[1]][next_point[0]] and check_space_adjacency(curr, next_point): #if the next point hasn't been visited and the empty (directly adjacent) border pixels border those of the current pixel 
+            #             queue.append(next_point)
+            #             visited_spots[next_point[1]][next_point[0]] = True
+            # for next_point in [[curr[0]-1, curr[1]-1], [curr[0]-1, curr[1]+1], [curr[0]+1, curr[1]-1], [curr[0]+1, curr[1]+1]]: # now looking at the locations in the corners
+            #     if next_point[0]>=0 and next_point[1]>=0 and next_point[0]<x_size and next_point[1]<y_size: #if location is valid
+            #         if not visited_spots[next_point[1]][next_point[0]] and check_space_adjacency(curr, next_point): #if the next point hasn't been visited and the empty (directly adjacent) border pixels border those of the current pixel 
+            #             queue.append(next_point)
+            #             visited_spots[next_point[1]][next_point[0]] = True
 
         sorted_boundary_points.append(sorted_group)
 
@@ -299,7 +349,7 @@ def relocate_points(boundary_points_input):
                 for j in range(len(group)):
                     left_distance = euclidean_distance(group[j], group[middle_index])
                     right_distance = euclidean_distance(group[middle_index], group[(j+1)%len(group)])
-                    if left_distance+right_distance < best_left_distance+best_right_distance and left_distance < best_left_distance and right_distance < best_right_distance: 
+                    if left_distance+right_distance < best_left_distance+best_right_distance:# and left_distance < best_left_distance and right_distance < best_right_distance: 
                         best_index = (j+1) % len(group) #insert at j+1 because if we insert at best_index we want the point at i+1 to be surrounded by the points at j (on left) and j+1 (on right)
                         best_left_distance = left_distance
                         best_right_distance = right_distance
@@ -495,7 +545,7 @@ offset_group_points = np.zeros((reference_size[1],reference_size[0]),dtype=bool)
 
 def is_point_collision(point, radius, reset_tracked_offset_points=False):
     """function that returns True if there is a point in the origional shape defining points within a radius of the inputted point"""
-    global origional_shape_points, check_collisions_with_offset_points, offset_group_points
+    global origional_shape_points, check_collisions_with_offset_points, offset_group_points, offset_collision_radius_divisor
     
     point = (int(point[0]), int(point[1]))
     
@@ -510,9 +560,9 @@ def is_point_collision(point, radius, reset_tracked_offset_points=False):
 
     while len(queue) > 0:
         candidate = queue.popleft()
-        if origional_shape_points[candidate[1]][candidate[0]]: #if the candidate point that we got from the queue
+        if origional_shape_points[candidate[1]][candidate[0]]: #if the candidate point that we got from the queue collides with og mesh, we return true
             return True
-        if offset_group_points[candidate[1]][candidate[0]] and check_collisions_with_offset_points:
+        if offset_group_points[candidate[1]][candidate[0]] and euclidean_distance(candidate,point) <= radius/max(1, offset_collision_radius_divisor) and check_collisions_with_offset_points: #if the candidate point that we got from the queue collides with offset mesh (and we are checking for offset mesh collision), we return true
             return True
 
         # getting the next candidates to add to the queue:
