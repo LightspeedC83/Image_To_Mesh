@@ -23,11 +23,11 @@ relocation_iterations = 0 # the maximum number of times that the relocate_points
 base_relocation_iterations_on_num_points = False # if True, the maximum number of relocation algorithm iterations in relocate_points() will be the length of the group of points in consideration; if False, the max will be relocation_iterations --This should be set to False if the reference is large
 only_relocate_outliers = True # if True, preforms the relocation algorithm on only points whose neighbor distances are above the average distance; if False, it preforms the relocation operation on every point
 
-check_collisions_with_offset_points = True # When creating offset points, the candidate offset point will be discarded if there is a point on the origional mesh within certain radius of the candidate, if this is True, then the candidate will also be discarded if it's too close to another offset point. - this acts in the is_point_collision() function
+check_collisions_with_offset_points = False # When creating offset points, the candidate offset point will be discarded if there is a point on the origional mesh within certain radius of the candidate, if this is True, then the candidate will also be discarded if it's too close to another offset point. - this acts in the is_point_collision() function
 offset_collision_radius_divisor = 3 # When doing the collision check with offset points and a candidate point, this, is used as the divisor of the acceptable radius in the is_collision() function, as a smaller radius is usually desirable for the offset points (allowing them to be closer to eachother than the distance they can be from an og mesh point)
 
 # opening the reference image
-reference_name = "gerrymandering_test_og"
+reference_name = "gerrymandering_test_texas"
 reference_path = f"images/{reference_name}.png"
 print(f"preforming operations on: '{reference_name}'")
 
@@ -577,6 +577,88 @@ def is_point_collision(point, radius, reset_tracked_offset_points=False):
         offset_group_points = np.zeros((reference_size[1],reference_size[0]),dtype=bool) # resetting the offset points group; the idea is that we want to reset the offset points that we check for collisions between groups
 
 
+###start of new line collision system#### TODO: still some kinks to figure out
+
+
+def is_line_collision(pt1, pt2):
+    """returns True if the two inputted points make a line that crosses the edge lines of the origional mesh"""
+    global boundary_pixles
+
+    line_mask = np.zeros((reference_size[1],reference_size[0]), dtype=bool)
+    
+    pt1 = round(pt1[0]),  round(pt1[1]) 
+    pt2 = round(pt2[0]),  round(pt2[1]) 
+    
+    rr, cc = line(pt1[1], pt1[0], pt2[1], pt2[0])  # skimage uses (row,col) = (y,x)
+    # clip indices if needed
+    rr = np.clip(rr, 0, reference_size[1]-1)
+    cc = np.clip(cc, 0, reference_size[0]-1)
+    # create suppression mask with line
+    line_mask[rr, cc] = True
+    #marking the origional points
+    line_mask[pt1[1]][pt1[0]] = True
+    line_mask[pt2[1]][pt2[0]] = True
+
+    return np.sum((line_mask & boundary_pixles).astype(int))
+
+def get_third_point(pt1, pt2, max_reroute, node, is_inner):
+    """when given two offset point candidates that produce a line collision with the origional mesh, this function returns a third point that
+       should go in between the two points to avoid a collision issue."""
+    global offset_scalar
+    midpoint = find_midpoint(pt1,pt2)
+    
+    # first we get the normal vectors
+    n = (pt1[1]-pt2[1], -1*(pt1[0]-pt2[0])) # normal vector to pt1 and pt2
+    n_magnitude = math.sqrt(n[0]**2+n[1]**2) # magnitude of normal vector
+    n_unit_1 = (n[0]/n_magnitude, n[1]/n_magnitude) # unit normal vector 
+    n_unit_2 = (-1*n_unit_1[0], -1*n_unit_1[1]) # unit normal vector in other direction (as there are two)
+
+    if not is_inner: # if the group that we're dealing with is an outer boundary
+        for k in range(1,max_reroute+1): # going through a bunch of possible offset distances for the new point
+            for normal_direction in [ n_unit_1, n_unit_2 ]: # checking both directions of normal vector to scale in
+                displaced_midpoint = (midpoint[0]+k*normal_direction[0], midpoint[1]+k*normal_direction[1])
+                if not ( is_line_collision(pt1, displaced_midpoint) or node.boundary.polygon.contains(s.Point(displaced_midpoint)) ): # if the new point under condiseration doesn't make a line that collides with the mesh and isn't contianed inside the mesh -- if statement used to run: if not ( is_line_collision(pt1, displaced_midpoint) or is_line_collision(pt2, displaced_midpoint) or node.boundary.polygon.contains(s.Point(displaced_midpoint)) )
+                    #when this point in the algorithm is reached, we've just barely made it outside the borders of the origional mesh and we need to extrude it by offset_scalar amount
+                    return (midpoint[0] + (k+offset_scalar)*normal_direction[0],  midpoint[1] + (k+offset_scalar)*normal_direction[1])
+    else: # if the group that we're dealing with is an inner boundary
+        for k in range(1,max_reroute+1): # going through a bunch of possible offset distances for the new point
+            for normal_direction in [ n_unit_1, n_unit_2 ]: # checking both directions of normal vector to scale in
+                displaced_midpoint = (midpoint[0]+k*normal_direction[0], midpoint[1]+k*normal_direction[1])
+                if not(is_line_collision(pt1, displaced_midpoint)) and node.boundary.polygon.contains(s.Point(displaced_midpoint)) : # if the new point under condiseration doesn't make a line that collides with the mesh and is contianed inside boundary points (because it's an inner boundary)
+                    #when this point in the algorithm is reached, we've just barely made it outside the borders of the origional mesh and we need to extrude it by offset_scalar amount
+                    return (midpoint[0] + (k+offset_scalar)*normal_direction[0],  midpoint[1] + (k+offset_scalar)*normal_direction[1])
+
+
+def fix_cut_corners(node, is_inner):
+    """for an inputted node in a tree of Boundary objects, this function will go through all the points and add points to fix collision issue resulting from cut corners"""
+    points = node.boundary.points[::]
+    
+    i = 0
+    while i < len(points):
+
+        curr = points[i]
+        next = points[(i+1)%len(points)]
+
+        # TODO: figure out why there might be none values in these lists - it's because of the get_third_point() returning None if there's no good point to return
+        # if curr == None or next == None:
+        #     print("AAAAAA")
+        #     continue
+
+        # print(curr, next)
+        if is_line_collision(curr,next):
+            third_point = get_third_point(curr, next, max_reroute=25, node=node, is_inner=is_inner)
+            if third_point == None:
+                i+=1
+                continue
+            else:
+                points.insert((i+1)%len(points), third_point)
+        
+        else:
+            i+=1
+    
+    return points
+
+#####end of new line collision system####
 
 # exporting the point data to a mesh
 # At this point in the program we have the following datastructures:
@@ -834,6 +916,42 @@ with open(f"outputs/{reference_name}_output-{reduction_factor}_reduction-{offset
 
                     anytree.Node(f"offset_boundary_{-1*child.boundary.id}", boundary=Boundary(offset_group, -1*child.boundary.id), parent=offset_boundaries[-1]) #set parent to the root node, we just made and added to the list
 
+        
+        # now we have the offset_boundaries list of all the points made from the normal vectors etc
+        
+
+        ###start of new collision detection system implementation### TODO: fix
+
+        # deleting any single points that cause line  -- makes way more sense to be doing this before trying to do more complex collision detection -- TODO: not sure if this even works
+        for tree in offset_boundaries:
+            for node in [x for x in tree.children] + [tree]: # going through the tree in question and all of its children
+                group = node.boundary.points #accessing the points in the boundary
+                indexes_to_delete = []
+                # now we go through each point and see if it's involved in a collision that removing it would fix; if so, we remove it
+                for i in range(len(group)):
+                    prev = group[(i-1)%len(group)]
+                    curr = group[i]
+                    next =group[(i+1)%len(group)]
+
+                    if is_line_collision(prev, curr) and is_line_collision(curr, next):
+                        indexes_to_delete.append(i)
+
+                # going through each of the indexes in reverse order (because they are in order already, this will mean we start with the highest index and count down)
+                for index in indexes_to_delete[::-1]: 
+                    del group[i]
+
+
+
+        # Next we will find and fix any cut corners on the extruded boundaries TODO: this probably doesn't work
+        for tree in offset_boundaries:
+            tree.boundary = Boundary(fix_cut_corners(tree, is_inner=False), id=tree.boundary.id)
+            
+            if len(tree.children) != 0:
+                for child_tree in tree.children:
+                    tree.boundary = Boundary(fix_cut_corners(tree, is_inner=True), id=tree.boundary.id)
+
+        ###end###
+        
 
         # relocating outlier points on the offset boundaries, both outer and inner
         for tree in offset_boundaries:
