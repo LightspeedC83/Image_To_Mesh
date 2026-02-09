@@ -4,7 +4,7 @@ This project takes in an image and creates a mesh from it that can be used for 3
 
 ## Showcase Images
 ![Input Image Basic](images/complex_test_1.png)
-![Output Image Representation Basic](images/progression_images/complex_test_1/complex_test_1 5c- combined_og_and_offset_points_with_connections-reduction=0.75.png)
+![Output Image Representation Basic]("images/progression_images/complex_test_1/complex_test_1 5c- combined_og_and_offset_points_with_connections-reduction=0.75.png")
 
 
 
