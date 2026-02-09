@@ -4,6 +4,8 @@ This project takes in an image and creates a mesh from it that can be used for 3
 
 ## Algorithm Flow
 An image is taken in and processed to identify core connected groups (flood fill algorithm), the borders of these groups are then identified and uniformly reduced to create a set of points along the border of the shape. The proper order of the points for the creation of mesh faces is determined. The normal vectors to these faces are found and new vertices created along both outside normal vectors from each corner. This gives a set of new points, which are processed by the algorithm to order them and collapse them into one point (depending on whether the corner is convex or concave and a distance merging factor). This set of new points is then processed further to generate an extrusion mesh. They are then used to create an OBJ file according to the final form that is desired (hole and punch, cookie cutter, etc.)
+![creation of offset points](figure_2_getting_normal_vectors.png)
+
 
 ## Image Processing
 The program starts by taking in an image, it converts the image to black and white (by which I do not mean greyscale, but that every pixel is either black or white) based on a value if the average value of the RGB values of the pixel falls below, the pixel is considered black. We only care about the black pixels. We then do a flood fill algorithm on the image to identify a group ID number for each black pixel (white pixels have a group ID number of None). Then we find the border pixels of each group. This processing gives us the following 2D arrays in which the data for a particular pixel at coordiantes (x,y) is held:
