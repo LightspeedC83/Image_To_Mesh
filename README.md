@@ -3,16 +3,24 @@
 This project takes in an image and creates a mesh from it that can be used for 3D modeling or 3D printing. The core problem that this project solves is the creation of a a regular offset mesh for an irregular shape, of arbitrary thickness, optimized for 3D printing. With this project, you can take a complex shape, for example an image of a gerrymandered district, and convert it into a .obj file where the sides have an offset thickness. This would allow your district image to be 3D printed to make a cookie cutter, or wall art, or overyly complicated pencil holder. A more direct application of this is for tolerance between complex geometry parts modeled after images. For example if you wanted to take an arbitrary image and emboss it into paper, you would need a "hole" and a "punch" with some tolerance offset between them that follows the shape of the image and accounts for both the print tolerance and the paper thickness.
 
 ## Showcase Images
-![Input Image Basic](images/complex_test_1.png)
-![Output Image Representation Basic]("images/progression_images/complex_test_1/complex_test_1 5c- combined_og_and_offset_points_with_connections-reduction=0.75.png")
+![Input Image](reference_images/image_for_punch_test.png)
+![Marking Groups](reference_images/image_for_punch_test-1--groups_marked.png)
+![Border Identification and Reduction](reference_images/image_for_punch_test-3--borders_reduced_by_75_percent.png)
+![Creation and linking of offset points](reference_images/image_for_punch_test-5c--combined_og_and_offset_points_with_connections-reduction=0.75.png)
+![Output OBJ](reference_images/image_for_punch_test_obj_visualization_gif.gif)
 
+![Input Image Gerrymandering](reference_images/gerrymandering_test.png)
+![Output Points Representation Gerrymandering](reference_images/gerrymandering_output.png)
+
+![Input Image Basic](reference_images/complex_test_1-1--groups_marked.png)
+![Output Points Representation Basic](reference_images/complex_test_1-5c-combined_og_and_offset_points_with_connections-reduction=0.75.png)
 
 
 ## Algorithm Flow
 An image is taken in and processed to identify core connected groups (flood fill algorithm), the borders of these groups are then identified and uniformly reduced to create a set of points along the border of the shape. The proper order of the points for the creation of mesh faces is determined. The normal vectors to these faces are found and new vertices created along both outside normal vectors from each corner. This gives a set of new points, which are processed by the algorithm to order them and collapse them into one point (depending on whether the corner is convex or concave and a distance merging factor). This set of new points is then processed further to generate an extrusion mesh. They are then used to create an OBJ file according to the final form that is desired (hole and punch, cookie cutter, etc.)
 
 Creation of offset points:
-![creation of offset points](figure_2_getting_normal_vectors.png)
+![creation of offset points](reference_images/figure_2_getting_normal_vectors.png)
 
 
 ## Image Processing
