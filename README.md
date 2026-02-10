@@ -5,32 +5,41 @@ This project takes in an image and creates a mesh from it that can be used for 3
 ## Showcase Images
 ### Smiley Test Example Holepunch Pipeline
 Input Image:
+
 ![Input Image](reference_images/image_for_punch_test.png)
 
 Marking Groups:
+
 ![Marking Groups](reference_images/image_for_punch_test-1--groups_marked.png)
 
 Border Identification and Uniform Reduction:
+
 ![Border Identification and Reduction](reference_images/image_for_punch_test-3--borders_reduced_by_75_percent.png)
 
 Output Point Representation:
+
 ![Creation and linking of offset points](reference_images/image_for_punch_test-5c--combined_og_and_offset_points_with_connections-reduction=0.75.png)
 
-Output OBJ:
+Output OBJ: 
+
 ![Output OBJ](reference_images/image_for_punch_test_obj_visualization_gif.gif)
 
 ### Testing Image
 Input Image:
+
 ![Input Image Basic](reference_images/complex_test_1-1--groups_marked.png)
 
 Output Point representation:
+
 ![Output Points Representation Basic](reference_images/complex_test_1-5c-combined_og_and_offset_points_with_connections-reduction=0.75.png)
 
 ### Gerrymandering Test (Goofy Kicking Donald)
 Input Image:
+
 ![Input Image Gerrymandering](reference_images/gerrymandering_test.png)
 
 Output Representation:
+
 ![Output Points Representation Gerrymandering](reference_images/gerrymandering_output.png)
 
 
